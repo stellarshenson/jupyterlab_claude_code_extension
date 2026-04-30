@@ -1,4 +1,5 @@
 import { JupyterFrontEnd } from '@jupyterlab/application';
+import { Dialog, showDialog } from '@jupyterlab/apputils';
 import { ServerConnection } from '@jupyterlab/services';
 import { ITerminalTracker } from '@jupyterlab/terminal';
 import { CommandRegistry } from '@lumino/commands';
@@ -379,22 +380,34 @@ export class ClaudeCodeSessionsWidget extends Widget {
     forceDangerous: boolean
   ): Promise<void> {
     try {
-      // 1. In-memory microcache - covers rapid-click and post-creation reuse
-      // before the new widget propagates fully through the tracker. Cleared
-      // on widget disposal. NOT persisted to localStorage.
+      // Always prefer reusing an open terminal for this project. The
+      // skip-permissions flag can only be applied to a fresh pty, never
+      // retroactively. So if the user wants dangerous mode but an open
+      // terminal already exists, show a modal asking them to close it
+      // first - we won't auto-close, won't silently reuse the wrong mode.
+
+      // 1. In-memory microcache.
       const cached = this._terminalsByPath.get(session.project_path);
       if (cached && !cached.isDisposed) {
+        if (forceDangerous) {
+          await this._showCloseExistingDialog();
+          this._app.shell.activateById(cached.id);
+          return;
+        }
         this._app.shell.activateById(cached.id);
         return;
       }
 
-      // 2. Walk every live terminal widget JL knows about and ask the
-      // server for the cwd of EVERY process in its pty's tree. Match if
-      // any one of them equals project_path.
+      // 2. Walk every live terminal widget JL knows about.
       const found = await this._findTerminalForCwd(session.project_path);
       if (found) {
         this._terminalsByPath.set(session.project_path, found);
         this._wireTerminalDisposal(session.project_path, found);
+        if (forceDangerous) {
+          await this._showCloseExistingDialog();
+          this._app.shell.activateById(found.id);
+          return;
+        }
         this._app.shell.activateById(found.id);
         return;
       }
@@ -462,6 +475,17 @@ export class ClaudeCodeSessionsWidget extends Widget {
       }
     }
     return null;
+  }
+
+  private async _showCloseExistingDialog(): Promise<void> {
+    await showDialog({
+      title: 'Existing Claude session is running',
+      body:
+        'A terminal for this project is already open. To launch with ' +
+        '--dangerously-skip-permissions, close that terminal first then ' +
+        'click "Resume (Skip Permissions)" again.',
+      buttons: [Dialog.okButton({ label: 'OK' })]
+    });
   }
 
   private _wireTerminalDisposal(projectPath: string, widget: any): void {
