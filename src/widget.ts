@@ -1,0 +1,731 @@
+import { JupyterFrontEnd } from '@jupyterlab/application';
+import { ServerConnection } from '@jupyterlab/services';
+import { CommandRegistry } from '@lumino/commands';
+import { Menu, Widget } from '@lumino/widgets';
+import { Message } from '@lumino/messaging';
+
+import { requestAPI } from './request';
+import {
+  claudeIcon,
+  refreshIcon,
+  removeIcon,
+  starFilledIcon
+} from './icons';
+import {
+  IFavouriteResponse,
+  IRemoveResponse,
+  ISession,
+  ISessionsListResponse
+} from './types';
+
+const POLL_INTERVAL_MS = 10_000;
+const RECENT_LIMIT = 10;
+const EXPANDED_STORAGE_KEY = 'jupyterlab_claude_code_extension:expanded';
+
+type SectionKey = 'favourites' | 'recent' | 'all';
+
+const SECTION_LABELS: Record<SectionKey, string> = {
+  favourites: 'Favourites',
+  recent: 'Recent',
+  all: 'All'
+};
+
+const DEFAULT_EXPANDED: Record<SectionKey, boolean> = {
+  favourites: true,
+  recent: true,
+  all: true
+};
+
+function loadExpanded(): Record<SectionKey, boolean> {
+  try {
+    const raw = window.localStorage.getItem(EXPANDED_STORAGE_KEY);
+    if (!raw) {
+      return { ...DEFAULT_EXPANDED };
+    }
+    const parsed = JSON.parse(raw);
+    return {
+      favourites:
+        typeof parsed?.favourites === 'boolean'
+          ? parsed.favourites
+          : DEFAULT_EXPANDED.favourites,
+      recent:
+        typeof parsed?.recent === 'boolean'
+          ? parsed.recent
+          : DEFAULT_EXPANDED.recent,
+      all:
+        typeof parsed?.all === 'boolean' ? parsed.all : DEFAULT_EXPANDED.all
+    };
+  } catch (_err) {
+    return { ...DEFAULT_EXPANDED };
+  }
+}
+
+function saveExpanded(state: Record<SectionKey, boolean>): void {
+  try {
+    window.localStorage.setItem(EXPANDED_STORAGE_KEY, JSON.stringify(state));
+  } catch (_err) {
+    // localStorage unavailable (private mode, quota) - ignore
+  }
+}
+
+const TERMINALS_STORAGE_KEY = 'jupyterlab_claude_code_extension:terminals';
+
+function loadTerminalMap(): Record<string, string> {
+  try {
+    const raw = window.localStorage.getItem(TERMINALS_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_err) {
+    return {};
+  }
+}
+
+function saveTerminalMap(map: Record<string, string>): void {
+  try {
+    window.localStorage.setItem(TERMINALS_STORAGE_KEY, JSON.stringify(map));
+  } catch (_err) {
+    // ignore
+  }
+}
+
+export class ClaudeCodeSessionsWidget extends Widget {
+  constructor(app: JupyterFrontEnd, rootDir: string) {
+    super();
+    this._app = app;
+    this._serverSettings = app.serviceManager.serverSettings;
+    this._rootDir = rootDir.replace(/\/+$/, '');
+
+    this.id = 'jupyterlab-claude-code-extension';
+    this.title.icon = claudeIcon;
+    this.title.caption = 'Claude Code Sessions';
+    this.addClass('jp-ClaudeSessionsPanel');
+
+    this._buildShell();
+    this._setupContextMenu();
+  }
+
+  refresh(): void {
+    this._showLoading();
+    this._setRefreshSpinning(true);
+    this._fetch()
+      .catch(err => this._showError(err))
+      .finally(() => this._setRefreshSpinning(false));
+  }
+
+  /** Toggle whether explicit ``/rename`` names are honoured. */
+  setResolveSessionNames(on: boolean): void {
+    if (this._resolveNames === on) {
+      return;
+    }
+    this._resolveNames = on;
+    this._render();
+  }
+
+  protected onAfterShow(_msg: Message): void {
+    this.refresh();
+    this._startPolling();
+  }
+
+  protected onBeforeHide(_msg: Message): void {
+    this._stopPolling();
+  }
+
+  protected onCloseRequest(msg: Message): void {
+    this._stopPolling();
+    super.onCloseRequest(msg);
+  }
+
+  // ------------------------------------------------------------------ shell
+
+  private _buildShell(): void {
+    const root = this.node;
+    root.innerHTML = '';
+
+    const header = document.createElement('div');
+    header.className = 'jp-ClaudeSessionsPanel-header';
+
+    const title = document.createElement('span');
+    title.className = 'jp-ClaudeSessionsPanel-title';
+    title.textContent = 'Claude Code Sessions';
+    header.appendChild(title);
+
+    const refreshBtn = document.createElement('button');
+    refreshBtn.className = 'jp-ClaudeSessionsPanel-iconButton';
+    refreshBtn.title = 'Refresh';
+    refreshIcon.element({ container: refreshBtn });
+    refreshBtn.addEventListener('click', () => this.refresh());
+    header.appendChild(refreshBtn);
+    this._refreshBtn = refreshBtn;
+
+    const body = document.createElement('div');
+    body.className = 'jp-ClaudeSessionsPanel-body';
+
+    const status = document.createElement('div');
+    status.className = 'jp-ClaudeSessionsPanel-status';
+
+    root.appendChild(header);
+    root.appendChild(body);
+    root.appendChild(status);
+
+    this._bodyEl = body;
+    this._statusEl = status;
+  }
+
+  private _showLoading(): void {
+    this._statusEl.textContent = this._sessions === null ? 'Loading...' : '';
+  }
+
+  private _showError(err: unknown): void {
+    const message = err instanceof Error ? err.message : String(err);
+    this._statusEl.textContent = `Error: ${message}`;
+  }
+
+  // ------------------------------------------------------------------ data
+
+  private async _fetch(): Promise<void> {
+    const data = await requestAPI<ISessionsListResponse>(
+      'sessions',
+      this._serverSettings
+    );
+    this._sessions = data.sessions ?? [];
+    this._statusEl.textContent = '';
+    this._render();
+  }
+
+  private async _toggleFavourite(session: ISession): Promise<void> {
+    const next = !session.favourite;
+    // Optimistic update
+    session.favourite = next;
+    this._render();
+    try {
+      await requestAPI<IFavouriteResponse>('sessions/favourite', this._serverSettings, {
+        method: 'POST',
+        body: JSON.stringify({
+          project_path: session.project_path,
+          favourite: next
+        })
+      });
+    } catch (err) {
+      // Roll back on failure
+      session.favourite = !next;
+      this._render();
+      this._showError(err);
+    }
+  }
+
+  private async _remove(session: ISession): Promise<void> {
+    this._removingPaths.add(session.encoded_path);
+    this._render();
+    try {
+      await requestAPI<IRemoveResponse>('sessions/remove', this._serverSettings, {
+        method: 'POST',
+        body: JSON.stringify({ encoded_path: session.encoded_path })
+      });
+      // Drop locally and re-render; a full refresh will follow on next poll
+      this._sessions = (this._sessions ?? []).filter(
+        s => s.encoded_path !== session.encoded_path
+      );
+    } catch (err) {
+      this._showError(err);
+    } finally {
+      this._removingPaths.delete(session.encoded_path);
+      this._render();
+    }
+  }
+
+  // -------------------------------------------------------------- terminal
+
+  private async _resumeInTerminal(session: ISession): Promise<void> {
+    try {
+      // 1. In-memory cache covers same-page-load clicks
+      const existing = this._terminalsByPath.get(session.project_path);
+      if (existing && !existing.isDisposed) {
+        this._app.shell.activateById(existing.id);
+        return;
+      }
+
+      // 2. Persisted map - locate a live terminal widget by name across reloads
+      const persistMap = loadTerminalMap();
+      const persistedName = persistMap[session.project_path];
+      if (persistedName) {
+        for (const w of this._app.shell.widgets('main')) {
+          const candidate = w as any;
+          if (candidate?.content?.session?.name === persistedName) {
+            this._terminalsByPath.set(session.project_path, candidate);
+            this._wireTerminalDisposal(session.project_path, candidate);
+            this._app.shell.activateById(candidate.id);
+            return;
+          }
+        }
+        // Stale entry - terminal was closed in a previous JL session
+        delete persistMap[session.project_path];
+        saveTerminalMap(persistMap);
+      }
+
+      // 3. Create a new terminal
+      const widget: any = await this._app.commands.execute(
+        'terminal:create-new',
+        { cwd: session.project_path }
+      );
+
+      if (widget && typeof widget.id === 'string') {
+        this._terminalsByPath.set(session.project_path, widget);
+        this._wireTerminalDisposal(session.project_path, widget);
+        const termName = widget?.content?.session?.name;
+        if (typeof termName === 'string') {
+          const fresh = loadTerminalMap();
+          fresh[session.project_path] = termName;
+          saveTerminalMap(fresh);
+        }
+      }
+
+      const term = widget?.content?.session ?? widget?.session;
+      const command = `cd ${this._shellQuote(session.project_path)} && claude --resume ${session.session_id}\r`;
+
+      if (!term || typeof term.send !== 'function') {
+        this._statusEl.textContent =
+          `Run in a terminal: cd ${session.project_path} && claude --resume ${session.session_id}`;
+        return;
+      }
+
+      // Wait for the first message from the terminal (shell prompt) before
+      // injecting input - sending too early arrives before the shell is ready.
+      let sent = false;
+      const send = () => {
+        if (sent) {
+          return;
+        }
+        sent = true;
+        term.send({ type: 'stdin', content: [command] });
+      };
+
+      if (term.messageReceived?.connect) {
+        const handler = () => {
+          term.messageReceived.disconnect(handler);
+          // Tiny additional delay so the prompt is rendered and ready for input
+          setTimeout(send, 150);
+        };
+        term.messageReceived.connect(handler);
+        // Hard fallback: if no message arrives within 2s, send anyway
+        setTimeout(send, 2000);
+      } else {
+        setTimeout(send, 600);
+      }
+    } catch (err) {
+      this._showError(err);
+    }
+  }
+
+  private _shellQuote(s: string): string {
+    return `'${s.replace(/'/g, `'\\''`)}'`;
+  }
+
+  private _wireTerminalDisposal(projectPath: string, widget: any): void {
+    if (!widget?.disposed?.connect) {
+      return;
+    }
+    widget.disposed.connect(() => {
+      const current = this._terminalsByPath.get(projectPath);
+      if (current === widget) {
+        this._terminalsByPath.delete(projectPath);
+      }
+      const persistMap = loadTerminalMap();
+      if (persistMap[projectPath]) {
+        delete persistMap[projectPath];
+        saveTerminalMap(persistMap);
+      }
+    });
+  }
+
+  // -------------------------------------------------------------- rendering
+
+  /** Apply the resolve-names setting + path-segment disambiguation. */
+  private _displayName(s: ISession): string {
+    if (!this._resolveNames) {
+      return this._basename(s.project_path) || s.encoded_path;
+    }
+    return s.name || this._basename(s.project_path) || s.encoded_path;
+  }
+
+  private _basename(p: string): string {
+    if (!p) {
+      return '';
+    }
+    const parts = p.split('/').filter(Boolean);
+    return parts[parts.length - 1] || '';
+  }
+
+  /** Walk path tails until every name in a colliding group is unique. */
+  private _disambiguate(rows: ISession[]): Map<string, string> {
+    const out = new Map<string, string>();
+    const groups = new Map<string, ISession[]>();
+    for (const r of rows) {
+      const n = this._displayName(r);
+      groups.set(n, (groups.get(n) ?? []).concat(r));
+    }
+    for (const [name, group] of groups.entries()) {
+      if (group.length === 1) {
+        out.set(group[0].project_path, name);
+        continue;
+      }
+      const segs = group.map(r =>
+        r.project_path.split('/').filter(Boolean)
+      );
+      const max = Math.max(...segs.map(s => s.length));
+      let depth = 1;
+      while (depth <= max) {
+        const tails = segs.map(s => s.slice(-depth).join('/'));
+        if (new Set(tails).size === tails.length) {
+          group.forEach((r, i) => out.set(r.project_path, tails[i]));
+          break;
+        }
+        depth += 1;
+      }
+      if (!out.has(group[0].project_path)) {
+        // Fallback to absolute path
+        group.forEach(r => out.set(r.project_path, r.project_path));
+      }
+    }
+    return out;
+  }
+
+  private _render(): void {
+    const sessions = this._sessions ?? [];
+
+    // Capture scrollTop per section so polling refreshes don't reset the
+    // user's place inside the All list.
+    const scrolls = new Map<string, number>();
+    this._bodyEl
+      .querySelectorAll<HTMLElement>('.jp-ClaudeSessionsPanel-section')
+      .forEach(sect => {
+        const key = sect.dataset.section;
+        const list = sect.querySelector<HTMLElement>(
+          '.jp-ClaudeSessionsPanel-list'
+        );
+        if (key && list) {
+          scrolls.set(key, list.scrollTop);
+        }
+      });
+
+    this._bodyEl.innerHTML = '';
+
+    if (sessions.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'jp-ClaudeSessionsPanel-empty';
+      empty.textContent = 'No Claude Code sessions found.';
+      this._bodyEl.appendChild(empty);
+      return;
+    }
+
+    // Compute disambiguated display names once per render.
+    this._displayNames = this._disambiguate(sessions);
+
+    const favourites = sessions.filter(s => s.favourite);
+    const recent = [...sessions]
+      .sort((a, b) => b.file_mtime - a.file_mtime)
+      .slice(0, RECENT_LIMIT);
+    const all = [...sessions].sort((a, b) =>
+      this._lookupName(a).localeCompare(this._lookupName(b))
+    );
+
+    this._renderSection('favourites', favourites);
+    this._renderSection('recent', recent);
+    this._renderSection('all', all);
+
+    // Restore scroll positions
+    this._bodyEl
+      .querySelectorAll<HTMLElement>('.jp-ClaudeSessionsPanel-section')
+      .forEach(sect => {
+        const key = sect.dataset.section;
+        const list = sect.querySelector<HTMLElement>(
+          '.jp-ClaudeSessionsPanel-list'
+        );
+        const saved = key ? scrolls.get(key) : undefined;
+        if (list && saved !== undefined) {
+          list.scrollTop = saved;
+        }
+      });
+  }
+
+  private _renderSection(key: SectionKey, items: ISession[]): void {
+    const section = document.createElement('div');
+    section.className = 'jp-ClaudeSessionsPanel-section';
+    section.dataset.section = key;
+    const expanded = this._expanded[key];
+
+    const header = document.createElement('button');
+    header.className = 'jp-ClaudeSessionsPanel-sectionHeader';
+    header.setAttribute('aria-expanded', String(expanded));
+
+    const caret = document.createElement('span');
+    caret.className = 'jp-ClaudeSessionsPanel-caret';
+    caret.textContent = expanded ? '▾' : '▸';
+    header.appendChild(caret);
+
+    const label = document.createElement('span');
+    label.className = 'jp-ClaudeSessionsPanel-sectionLabel';
+    label.textContent = `${SECTION_LABELS[key]} (${items.length})`;
+    header.appendChild(label);
+
+    header.addEventListener('click', () => {
+      this._expanded[key] = !this._expanded[key];
+      saveExpanded(this._expanded);
+      this._render();
+    });
+    section.appendChild(header);
+
+    if (expanded) {
+      const list = document.createElement('div');
+      list.className = 'jp-ClaudeSessionsPanel-list';
+      if (items.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'jp-ClaudeSessionsPanel-emptySection';
+        empty.textContent = key === 'favourites' ? 'No favourites yet.' : 'Empty.';
+        list.appendChild(empty);
+      } else {
+        for (const item of items) {
+          list.appendChild(this._renderRow(item));
+        }
+      }
+      section.appendChild(list);
+    }
+
+    this._bodyEl.appendChild(section);
+  }
+
+  private _renderRow(session: ISession): HTMLDivElement {
+    const row = document.createElement('div');
+    row.className = 'jp-ClaudeSessionsPanel-row';
+    row.title = this._buildRowTooltip(session);
+
+    const removing = this._removingPaths.has(session.encoded_path);
+    if (removing) {
+      row.classList.add('jp-mod-busy');
+    }
+
+    if (removing) {
+      const spinner = document.createElement('span');
+      spinner.className = 'jp-ClaudeSessionsPanel-spinner';
+      spinner.title = 'Removing...';
+      row.appendChild(spinner);
+    } else if (session.remote_control) {
+      const dot = document.createElement('span');
+      dot.className = 'jp-ClaudeSessionsPanel-dot';
+      dot.title = 'Remote control session is active';
+      row.appendChild(dot);
+    } else {
+      const dotPlaceholder = document.createElement('span');
+      dotPlaceholder.className = 'jp-ClaudeSessionsPanel-dotPlaceholder';
+      row.appendChild(dotPlaceholder);
+    }
+
+    const name = document.createElement('span');
+    name.className = 'jp-ClaudeSessionsPanel-name';
+    name.textContent = this._lookupName(session);
+    row.appendChild(name);
+
+    if (session.favourite) {
+      const star = document.createElement('span');
+      star.className = 'jp-ClaudeSessionsPanel-favStar';
+      star.title = 'Favourite';
+      starFilledIcon.element({ container: star });
+      row.appendChild(star);
+    }
+
+    row.addEventListener('click', () => {
+      if (removing) {
+        return;
+      }
+      void this._resumeInTerminal(session);
+    });
+    row.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      if (removing) {
+        return;
+      }
+      this._activeSession = session;
+      this._setActiveRow(row);
+      this._contextMenu.open(e.clientX, e.clientY);
+    });
+
+    return row;
+  }
+
+  private _lookupName(s: ISession): string {
+    return (
+      this._displayNames.get(s.project_path) ?? this._displayName(s)
+    );
+  }
+
+  private _buildRowTooltip(s: ISession): string {
+    const lines: string[] = [this._lookupName(s)];
+    lines.push(`Path: ${this._displayPath(s.project_path)}`);
+    if (s.file_mtime) {
+      lines.push(`Last activity: ${this._formatRelativeTime(s.file_mtime)}`);
+    }
+    if (s.message_count) {
+      lines.push(`Messages: ${s.message_count}`);
+    }
+    if (s.git_branch) {
+      lines.push(`Branch: ${s.git_branch}`);
+    }
+    if (s.remote_control) {
+      lines.push('Remote control: active');
+    }
+    if (s.first_prompt) {
+      const trimmed = s.first_prompt.length > 100
+        ? `${s.first_prompt.slice(0, 100)}...`
+        : s.first_prompt;
+      lines.push(`First prompt: ${trimmed}`);
+    }
+    if (s.session_id) {
+      lines.push(`Session id: ${s.session_id}`);
+    }
+    return lines.join('\n');
+  }
+
+  private _displayPath(absolute: string): string {
+    if (!this._rootDir) {
+      return absolute;
+    }
+    if (absolute === this._rootDir) {
+      return '.';
+    }
+    if (absolute.startsWith(this._rootDir + '/')) {
+      return absolute.slice(this._rootDir.length + 1);
+    }
+    return absolute;
+  }
+
+  private _formatRelativeTime(epochMs: number): string {
+    if (!epochMs) {
+      return 'unknown';
+    }
+    const diff = Date.now() - epochMs;
+    if (diff < 60_000) {
+      return 'just now';
+    }
+    if (diff < 3_600_000) {
+      return `${Math.floor(diff / 60_000)}m ago`;
+    }
+    if (diff < 86_400_000) {
+      return `${Math.floor(diff / 3_600_000)}h ago`;
+    }
+    if (diff < 30 * 86_400_000) {
+      return `${Math.floor(diff / 86_400_000)}d ago`;
+    }
+    return new Date(epochMs).toLocaleDateString();
+  }
+
+  private _setRefreshSpinning(on: boolean): void {
+    if (!this._refreshBtn) {
+      return;
+    }
+    this._refreshBtn.classList.toggle('jp-mod-spinning', on);
+  }
+
+  private _setActiveRow(row: HTMLElement | null): void {
+    if (this._activeRowEl && this._activeRowEl !== row) {
+      this._activeRowEl.classList.remove('jp-mod-active');
+    }
+    this._activeRowEl = row;
+    if (row) {
+      row.classList.add('jp-mod-active');
+    }
+  }
+
+  // -------------------------------------------------------------- ctx menu
+
+  private _setupContextMenu(): void {
+    this._commands = new CommandRegistry();
+
+    this._commands.addCommand('claude-code-sessions:toggle-favourite', {
+      label: () =>
+        this._activeSession?.favourite
+          ? 'Remove from Favourites'
+          : 'Add to Favourites',
+      execute: () => {
+        if (this._activeSession) {
+          void this._toggleFavourite(this._activeSession);
+        }
+      }
+    });
+
+    this._commands.addCommand('claude-code-sessions:resume', {
+      label: 'Resume in Terminal',
+      execute: () => {
+        if (this._activeSession) {
+          void this._resumeInTerminal(this._activeSession);
+        }
+      }
+    });
+
+    this._commands.addCommand('claude-code-sessions:remove', {
+      label: 'Remove from Claude',
+      icon: removeIcon,
+      execute: () => {
+        if (this._activeSession) {
+          void this._remove(this._activeSession);
+        }
+      }
+    });
+
+    this._contextMenu = new Menu({ commands: this._commands });
+    this._contextMenu.addClass('jp-ClaudeSessionsContextMenu');
+    this._contextMenu.addItem({ command: 'claude-code-sessions:resume' });
+    this._contextMenu.addItem({ command: 'claude-code-sessions:toggle-favourite' });
+    this._contextMenu.addItem({ type: 'separator' });
+    this._contextMenu.addItem({ command: 'claude-code-sessions:remove' });
+
+    this._contextMenu.aboutToClose.connect(() => {
+      // Only clear the visual highlight - DO NOT null _activeSession.
+      // Lumino fires aboutToClose BEFORE the activated item's command runs,
+      // so the command callback still needs to read _activeSession. The
+      // field is overwritten on the next contextmenu open.
+      this._setActiveRow(null);
+    });
+  }
+
+  // --------------------------------------------------------------- polling
+
+  private _startPolling(): void {
+    if (this._pollHandle !== null) {
+      return;
+    }
+    this._pollHandle = window.setInterval(() => {
+      // Don't reshuffle rows while the user is interacting with the context menu
+      if (this._contextMenu.isAttached) {
+        return;
+      }
+      this._fetch().catch(err => this._showError(err));
+    }, POLL_INTERVAL_MS);
+  }
+
+  private _stopPolling(): void {
+    if (this._pollHandle !== null) {
+      window.clearInterval(this._pollHandle);
+      this._pollHandle = null;
+    }
+  }
+
+  private readonly _app: JupyterFrontEnd;
+  private readonly _serverSettings: ServerConnection.ISettings;
+  private _bodyEl!: HTMLDivElement;
+  private _statusEl!: HTMLDivElement;
+  private _refreshBtn: HTMLButtonElement | null = null;
+  private _sessions: ISession[] | null = null;
+  private _expanded: Record<SectionKey, boolean> = loadExpanded();
+  private _commands!: CommandRegistry;
+  private _contextMenu!: Menu;
+  private _activeSession: ISession | null = null;
+  private _activeRowEl: HTMLElement | null = null;
+  private _pollHandle: number | null = null;
+  private readonly _removingPaths: Set<string> = new Set();
+  private readonly _terminalsByPath: Map<string, any> = new Map();
+  private readonly _rootDir: string;
+  private _resolveNames: boolean = true;
+  private _displayNames: Map<string, string> = new Map();
+}

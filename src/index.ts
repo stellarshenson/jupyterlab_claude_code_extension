@@ -1,29 +1,87 @@
 import {
+  ILabShell,
+  ILayoutRestorer,
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
+import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import { requestAPI } from './request';
+import { IStatusResponse } from './types';
+import { ClaudeCodeSessionsWidget } from './widget';
 
-/**
- * Initialization data for the jupyterlab_claude_code_extension extension.
- */
+const PLUGIN_ID = 'jupyterlab_claude_code_extension:plugin';
+const WIDGET_ID = 'jupyterlab-claude-code-extension';
+
 const plugin: JupyterFrontEndPlugin<void> = {
-  id: 'jupyterlab_claude_code_extension:plugin',
-  description: 'Jupyterlab extension to help with ai assisted coding with Claude Code. It implements a tool panel (like jupyterlab_trash_mgmt_extension) with recent, all and favourite claude code sessions, it also shows if a session is currently enabled for remote control; It also allows to remove sessions (using context menu); When sesison is clicked - opens claude code in terminal in that folder and continues',
+  id: PLUGIN_ID,
+  description:
+    'Side panel listing Claude Code sessions per project folder, with remote-control indicator, favourites, and one-click resume in a terminal.',
   autoStart: true,
-  activate: (app: JupyterFrontEnd) => {
-    console.log('JupyterLab extension jupyterlab_claude_code_extension is activated!');
+  requires: [ILabShell],
+  optional: [ILayoutRestorer, ISettingRegistry],
+  activate: async (
+    app: JupyterFrontEnd,
+    labShell: ILabShell,
+    restorer: ILayoutRestorer | null,
+    settingRegistry: ISettingRegistry | null
+  ) => {
+    const settings = app.serviceManager.serverSettings;
 
-    requestAPI<any>('hello', app.serviceManager.serverSettings)
-      .then(data => {
-        console.log(data);
-      })
-      .catch(reason => {
-        console.error(
-          `The jupyterlab_claude_code_extension server extension appears to be missing.\n${reason}`
+    let status: IStatusResponse;
+    try {
+      status = await requestAPI<IStatusResponse>('status', settings);
+    } catch (err) {
+      console.error(
+        '[jupyterlab_claude_code_extension] status check failed; panel will not be registered.',
+        err
+      );
+      return;
+    }
+
+    if (!status.enabled) {
+      console.info(
+        '[jupyterlab_claude_code_extension] `claude` binary not found on PATH; panel disabled.'
+      );
+      return;
+    }
+
+    const widget = new ClaudeCodeSessionsWidget(app, status.root_dir || '');
+    labShell.add(widget, 'left', { rank: 600 });
+
+    if (settingRegistry) {
+      try {
+        const settings = await settingRegistry.load(PLUGIN_ID);
+        const apply = (): void => {
+          const resolve = settings.get('resolveSessionNames').composite as boolean;
+          widget.setResolveSessionNames(resolve !== false);
+        };
+        apply();
+        settings.changed.connect(apply);
+      } catch (err) {
+        console.warn(
+          '[jupyterlab_claude_code_extension] failed to load settings; using defaults',
+          err
         );
-      });
+      }
+    }
+
+    // Register with the layout restorer so JL remembers whether the panel
+    // was active/visible across browser reloads and restarts.
+    if (restorer) {
+      restorer.add(widget, WIDGET_ID);
+    }
+
+    app.commands.addCommand('claude-code-sessions:refresh', {
+      label: 'Refresh Claude Code Sessions',
+      execute: () => widget.refresh()
+    });
+
+    console.log(
+      '[jupyterlab_claude_code_extension] panel registered (claude:',
+      status.claude_path,
+      ')'
+    );
   }
 };
 

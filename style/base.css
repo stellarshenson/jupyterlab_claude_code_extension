@@ -1,5 +1,241 @@
 /*
     See the JupyterLab Developer Guide for useful CSS Patterns:
-
     https://jupyterlab.readthedocs.io/en/stable/developer/css.html
 */
+
+.jp-ClaudeSessionsPanel {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--jp-layout-color1);
+  color: var(--jp-ui-font-color1);
+  font-family: var(--jp-ui-font-family);
+  font-size: var(--jp-ui-font-size1);
+  height: 100%;
+  min-width: 0;
+}
+
+.jp-ClaudeSessionsPanel-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--jp-border-color2);
+  background: var(--jp-layout-color2);
+  flex: 0 0 auto;
+  min-height: 24px;
+}
+
+.jp-ClaudeSessionsPanel-title {
+  flex: 1 1 auto;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: var(--jp-ui-font-size0);
+  color: var(--jp-ui-font-color2);
+}
+
+.jp-ClaudeSessionsPanel-iconButton {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 2px;
+  display: flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  color: var(--jp-ui-font-color2);
+}
+
+.jp-ClaudeSessionsPanel-iconButton:hover {
+  background: var(--jp-layout-color3);
+  color: var(--jp-ui-font-color1);
+}
+
+.jp-ClaudeSessionsPanel-iconButton svg {
+  width: 14px;
+  height: 14px;
+}
+
+.jp-ClaudeSessionsPanel-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.jp-ClaudeSessionsPanel-status {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  font-size: var(--jp-ui-font-size0);
+  color: var(--jp-warn-color1);
+  min-height: 14px;
+}
+
+.jp-ClaudeSessionsPanel-empty,
+.jp-ClaudeSessionsPanel-emptySection {
+  padding: 8px 12px;
+  color: var(--jp-ui-font-color3);
+  font-style: italic;
+}
+
+.jp-ClaudeSessionsPanel-section {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  max-height: 33vh;
+  min-height: 0;
+  border-bottom: 1px solid var(--jp-border-color3);
+}
+
+.jp-ClaudeSessionsPanel-section[data-section='all'] {
+  flex: 1 1 0;
+  max-height: none;
+}
+
+.jp-ClaudeSessionsPanel-sectionHeader {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 4px 8px;
+  background: var(--jp-layout-color2);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--jp-ui-font-color1);
+  font-family: inherit;
+  font-size: var(--jp-ui-font-size0);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.jp-ClaudeSessionsPanel-sectionHeader:hover {
+  background: var(--jp-layout-color3);
+}
+
+.jp-ClaudeSessionsPanel-caret {
+  width: 14px;
+  display: inline-block;
+  color: var(--jp-ui-font-color2);
+}
+
+.jp-ClaudeSessionsPanel-sectionLabel {
+  flex: 1 1 auto;
+}
+
+.jp-ClaudeSessionsPanel-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.jp-ClaudeSessionsPanel-row {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  height: 24px;
+  line-height: 24px;
+  cursor: pointer;
+  gap: 6px;
+  user-select: none;
+  font-size: var(--jp-ui-font-size1);
+}
+
+.jp-ClaudeSessionsPanel-row:hover,
+.jp-ClaudeSessionsPanel-row.jp-mod-active {
+  background: var(--jp-layout-color2);
+}
+
+.jp-ClaudeSessionsPanel-row.jp-mod-active {
+  background: var(--jp-layout-color3);
+}
+
+.jp-ClaudeSessionsPanel-name {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--jp-ui-font-size1);
+  color: var(--jp-ui-font-color1);
+}
+
+.jp-ClaudeSessionsPanel-dot,
+.jp-ClaudeSessionsPanel-dotPlaceholder {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.jp-ClaudeSessionsPanel-dot {
+  background-color: var(--jp-success-color1);
+  box-shadow: 0 0 4px var(--jp-success-color1);
+}
+
+.jp-ClaudeSessionsPanel-dotPlaceholder {
+  background-color: transparent;
+}
+
+.jp-ClaudeSessionsPanel-favStar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--jp-warn-color1);
+}
+
+.jp-ClaudeSessionsPanel-favStar svg {
+  width: 12px;
+  height: 12px;
+}
+
+@keyframes jp-ClaudeSessionsPanel-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.jp-ClaudeSessionsPanel-iconButton.jp-mod-spinning svg {
+  animation: jp-ClaudeSessionsPanel-spin 0.9s linear infinite;
+}
+
+.jp-ClaudeSessionsPanel-spinner {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--jp-border-color2);
+  border-top-color: var(--jp-brand-color1);
+  animation: jp-ClaudeSessionsPanel-spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+.jp-ClaudeSessionsPanel-row.jp-mod-busy {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/*
+ * Vertically centre context-menu icons with the label text. Lumino's
+ * .lm-Menu-itemIcon is display:table-cell so an inline SVG sits on the
+ * row's text baseline by default. JL's stock CSS adds margin-top:-2px on
+ * the cell which works for its own icons; for ours we additionally shift
+ * the SVG to the cell middle so the trash glyph aligns with "Remove from
+ * Claude" instead of hanging.
+ */
+.jp-ClaudeSessionsContextMenu .lm-Menu-itemIcon {
+  vertical-align: middle;
+}
+
+.jp-ClaudeSessionsContextMenu .lm-Menu-itemIcon svg {
+  vertical-align: middle;
+  display: block;
+  margin: 0 auto;
+}

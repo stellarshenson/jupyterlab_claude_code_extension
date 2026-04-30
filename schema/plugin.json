@@ -1,0 +1,15 @@
+{
+  "title": "Claude Code Sessions",
+  "description": "Settings for the Claude Code sessions side panel.",
+  "type": "object",
+  "jupyter.lab.setting-icon-label": "Claude Code Sessions",
+  "properties": {
+    "resolveSessionNames": {
+      "type": "boolean",
+      "title": "Resolve session names",
+      "description": "When enabled (default), the panel shows the user-set session name (via /rename) where one is available. When disabled, every row is shown by its project folder name regardless of any rename.",
+      "default": true
+    }
+  },
+  "additionalProperties": false
+}
