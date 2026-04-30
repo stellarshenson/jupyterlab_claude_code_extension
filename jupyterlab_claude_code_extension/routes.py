@@ -214,6 +214,7 @@ class LaunchClaudeTerminalHandler(APIHandler):
             return
         project_path = body.get("project_path")
         session_id = body.get("session_id")
+        dangerously_skip = bool(body.get("dangerously_skip_permissions"))
         if not isinstance(project_path, str) or not os.path.isdir(project_path):
             self.set_status(400)
             self.finish(json.dumps({"error": "invalid_project_path"}))
@@ -232,8 +233,11 @@ class LaunchClaudeTerminalHandler(APIHandler):
             self.set_status(503)
             self.finish(json.dumps({"error": "terminal_service_unavailable"}))
             return
+        argv = [claude, "--resume", session_id]
+        if dangerously_skip:
+            argv.append("--dangerously-skip-permissions")
         model = terminal_manager.create(
-            shell_command=[claude, "--resume", session_id],
+            shell_command=argv,
             cwd=project_path,
         )
         # ``model`` from jupyter_server_terminals is dict-like with at

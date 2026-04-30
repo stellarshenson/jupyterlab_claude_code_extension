@@ -6,7 +6,13 @@ import { Menu, Widget } from '@lumino/widgets';
 import { Message } from '@lumino/messaging';
 
 import { requestAPI } from './request';
-import { claudeIcon, refreshIcon, removeIcon, starFilledIcon } from './icons';
+import {
+  claudeIcon,
+  refreshIcon,
+  removeIcon,
+  shieldIcon,
+  starFilledIcon
+} from './icons';
 import {
   IFavouriteResponse,
   ILaunchTerminalResponse,
@@ -125,6 +131,11 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._render();
   }
 
+  /** Toggle the --dangerously-skip-permissions flag on launched sessions. */
+  setDangerouslySkipPermissions(on: boolean): void {
+    this._dangerouslySkip = !!on;
+  }
+
   protected onAfterShow(_msg: Message): void {
     this.refresh();
     this._startPolling();
@@ -199,11 +210,11 @@ export class ClaudeCodeSessionsWidget extends Widget {
       .replace(/[\s\-_./]+/g, '');
   }
 
-  /** Strict fuzzy match: substring on normalised strings, with up to 2%
-   * Levenshtein tolerance for queries of 6+ chars (so the 98% threshold
-   * only relaxes substring strictness when the query is long enough that
-   * 2% rounds to a nonzero edit budget - effectively substring-only for
-   * short queries).
+  /** Fuzzy match at a 95% threshold: substring on normalised strings,
+   * with up to 5% Levenshtein tolerance. For short queries the budget
+   * still rounds to zero so behaviour is substring-only there - the
+   * relaxation only kicks in for queries long enough that 5% reaches a
+   * full edit (10+ chars).
    */
   private _fuzzyMatch(haystack: string, needle: string): boolean {
     if (!needle) {
@@ -217,7 +228,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
     if (h.includes(n)) {
       return true;
     }
-    const tol = Math.floor(n.length * 0.02);
+    const tol = Math.round(n.length * 0.05);
     if (tol === 0) {
       return false;
     }
@@ -344,21 +355,29 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
   // -------------------------------------------------------------- terminal
 
-  private async _resumeInTerminal(session: ISession): Promise<void> {
+  private async _resumeInTerminal(
+    session: ISession,
+    forceDangerous: boolean = false
+  ): Promise<void> {
     // Coalesce concurrent clicks on the same row - subsequent clicks attach
     // to the in-flight promise instead of creating their own terminal.
     const inFlight = this._pendingByPath.get(session.project_path);
     if (inFlight) {
       return inFlight;
     }
-    const promise = this._doResumeInTerminal(session).finally(() => {
-      this._pendingByPath.delete(session.project_path);
-    });
+    const promise = this._doResumeInTerminal(session, forceDangerous).finally(
+      () => {
+        this._pendingByPath.delete(session.project_path);
+      }
+    );
     this._pendingByPath.set(session.project_path, promise);
     return promise;
   }
 
-  private async _doResumeInTerminal(session: ISession): Promise<void> {
+  private async _doResumeInTerminal(
+    session: ISession,
+    forceDangerous: boolean
+  ): Promise<void> {
     try {
       // 1. In-memory microcache - covers rapid-click and post-creation reuse
       // before the new widget propagates fully through the tracker. Cleared
@@ -392,7 +411,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
           method: 'POST',
           body: JSON.stringify({
             project_path: session.project_path,
-            session_id: session.session_id
+            session_id: session.session_id,
+            dangerously_skip_permissions:
+              forceDangerous || this._dangerouslySkip
           })
         }
       );
@@ -779,6 +800,16 @@ export class ClaudeCodeSessionsWidget extends Widget {
       }
     });
 
+    this._commands.addCommand('claude-code-sessions:resume-dangerous', {
+      label: 'Resume (Skip Permissions)',
+      icon: shieldIcon,
+      execute: () => {
+        if (this._activeSession) {
+          void this._resumeInTerminal(this._activeSession, true);
+        }
+      }
+    });
+
     this._commands.addCommand('claude-code-sessions:remove', {
       label: 'Remove from Claude',
       icon: removeIcon,
@@ -792,6 +823,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._contextMenu = new Menu({ commands: this._commands });
     this._contextMenu.addClass('jp-ClaudeSessionsContextMenu');
     this._contextMenu.addItem({ command: 'claude-code-sessions:resume' });
+    this._contextMenu.addItem({
+      command: 'claude-code-sessions:resume-dangerous'
+    });
     this._contextMenu.addItem({
       command: 'claude-code-sessions:toggle-favourite'
     });
@@ -848,6 +882,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private readonly _rootDir: string;
   private _resolveNames: boolean = true;
   private _recentLimit: number = DEFAULT_RECENT_LIMIT;
+  private _dangerouslySkip: boolean = false;
   private _displayNames: Map<string, string> = new Map();
   private _filter: string = '';
 }

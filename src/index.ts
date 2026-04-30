@@ -66,6 +66,9 @@ const plugin: JupyterFrontEndPlugin<void> = {
           if (typeof limit === 'number') {
             widget.setRecentLimit(limit);
           }
+          const dangerous = settings.get('dangerouslySkipPermissions')
+            .composite as boolean;
+          widget.setDangerouslySkipPermissions(!!dangerous);
         };
         apply();
         settings.changed.connect(apply);

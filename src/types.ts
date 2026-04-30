@@ -44,6 +44,7 @@ export interface IRemoveResponse {
 export interface ILaunchTerminalRequest {
   project_path: string;
   session_id: string;
+  dangerously_skip_permissions?: boolean;
 }
 
 export interface ILaunchTerminalResponse {

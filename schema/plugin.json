@@ -18,6 +18,12 @@
       "default": 10,
       "minimum": 1,
       "maximum": 100
+    },
+    "dangerouslySkipPermissions": {
+      "type": "boolean",
+      "title": "Dangerously skip permissions",
+      "description": "When enabled, newly spawned and resumed sessions are launched with `--dangerously-skip-permissions`. Bypasses every Claude Code permission prompt - only enable in sandboxes you trust.",
+      "default": false
     }
   },
   "additionalProperties": false
