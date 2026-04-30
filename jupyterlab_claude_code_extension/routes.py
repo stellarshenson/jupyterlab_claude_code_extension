@@ -195,6 +195,60 @@ class TerminalCwdHandler(APIHandler):
         self.finish(json.dumps({"terminal_name": terminal_name, "cwds": cwds}))
 
 
+class LaunchClaudeTerminalHandler(APIHandler):
+    """Spawn a JL terminal whose pty's only process is ``claude --resume``.
+
+    Bypasses ``terminal:create-new`` (which spawns the user's $SHELL) so the
+    terminal tab shows claude immediately without any visible bash. Uses
+    terminado's per-call ``shell_command`` option through
+    ``jupyter_server_terminals``' ``TerminalManager.create``.
+    """
+
+    @tornado.web.authenticated
+    async def post(self) -> None:
+        try:
+            body = json.loads(self.request.body or b"{}")
+        except json.JSONDecodeError:
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_json"}))
+            return
+        project_path = body.get("project_path")
+        session_id = body.get("session_id")
+        if not isinstance(project_path, str) or not os.path.isdir(project_path):
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_project_path"}))
+            return
+        if not isinstance(session_id, str) or not session_id:
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_session_id"}))
+            return
+        claude = sessions_mod.claude_binary_available()
+        if not claude:
+            self.set_status(503)
+            self.finish(json.dumps({"error": "claude_not_found"}))
+            return
+        terminal_manager = self.settings.get("terminal_manager")
+        if terminal_manager is None:
+            self.set_status(503)
+            self.finish(json.dumps({"error": "terminal_service_unavailable"}))
+            return
+        model = terminal_manager.create(
+            shell_command=[claude, "--resume", session_id],
+            cwd=project_path,
+        )
+        # ``model`` from jupyter_server_terminals is dict-like with at
+        # least a ``name`` field; some versions return an object with a
+        # ``.name`` attribute - handle both.
+        name = (
+            model.get("name") if isinstance(model, dict) else getattr(model, "name", None)
+        )
+        if not isinstance(name, str):
+            self.set_status(500)
+            self.finish(json.dumps({"error": "terminal_create_failed"}))
+            return
+        self.finish(json.dumps({"terminal_name": name}))
+
+
 def setup_route_handlers(web_app) -> None:
     host_pattern = ".*$"
     base_url = web_app.settings["base_url"]
@@ -207,6 +261,10 @@ def setup_route_handlers(web_app) -> None:
         (
             url_path_join(base_url, URL_PREFIX, "terminal-cwd", r"([^/]+)"),
             TerminalCwdHandler,
+        ),
+        (
+            url_path_join(base_url, URL_PREFIX, "launch-terminal"),
+            LaunchClaudeTerminalHandler,
         ),
     ]
 

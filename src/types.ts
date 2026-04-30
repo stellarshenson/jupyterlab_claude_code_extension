@@ -40,3 +40,12 @@ export interface IRemoveRequest {
 export interface IRemoveResponse {
   removed: string;
 }
+
+export interface ILaunchTerminalRequest {
+  project_path: string;
+  session_id: string;
+}
+
+export interface ILaunchTerminalResponse {
+  terminal_name: string;
+}

@@ -57,6 +57,29 @@
   height: 14px;
 }
 
+.jp-ClaudeSessionsPanel-search {
+  flex: 0 0 auto;
+  margin: 4px 8px;
+  padding: 2px 6px;
+  background: var(--jp-layout-color1);
+  color: var(--jp-ui-font-color1);
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: var(--jp-ui-font-size1);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.jp-ClaudeSessionsPanel-search:focus {
+  border-color: var(--jp-brand-color1);
+}
+
+.jp-ClaudeSessionsPanel-search::placeholder {
+  color: var(--jp-ui-font-color3);
+}
+
 .jp-ClaudeSessionsPanel-body {
   flex: 1 1 auto;
   display: flex;

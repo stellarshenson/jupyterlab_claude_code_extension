@@ -15,11 +15,13 @@ test('should emit an activation console message', async ({ page }) => {
 
   await page.goto();
 
-  expect(
-    logs.filter(
-      s =>
-        s ===
-        'JupyterLab extension jupyterlab_claude_code_extension is activated!'
-    )
-  ).toHaveLength(1);
+  // Activation either registers the panel or logs that the claude binary
+  // is missing (CI runners do not have claude installed). Either path
+  // proves the extension activated.
+  const activated = logs.some(
+    s =>
+      s.includes('[jupyterlab_claude_code_extension] panel registered') ||
+      s.includes('[jupyterlab_claude_code_extension] `claude` binary not found')
+  );
+  expect(activated).toBe(true);
 });

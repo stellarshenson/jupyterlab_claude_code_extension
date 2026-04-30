@@ -9,6 +9,7 @@ import { requestAPI } from './request';
 import { claudeIcon, refreshIcon, removeIcon, starFilledIcon } from './icons';
 import {
   IFavouriteResponse,
+  ILaunchTerminalResponse,
   IRemoveResponse,
   ISession,
   ISessionsListResponse
@@ -150,6 +151,16 @@ export class ClaudeCodeSessionsWidget extends Widget {
     header.appendChild(refreshBtn);
     this._refreshBtn = refreshBtn;
 
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'jp-ClaudeSessionsPanel-search';
+    search.placeholder = 'Filter sessions...';
+    search.spellcheck = false;
+    search.addEventListener('input', () => {
+      this._filter = search.value;
+      this._render();
+    });
+
     const body = document.createElement('div');
     body.className = 'jp-ClaudeSessionsPanel-body';
 
@@ -157,11 +168,43 @@ export class ClaudeCodeSessionsWidget extends Widget {
     status.className = 'jp-ClaudeSessionsPanel-status';
 
     root.appendChild(header);
+    root.appendChild(search);
     root.appendChild(body);
     root.appendChild(status);
 
     this._bodyEl = body;
     this._statusEl = status;
+  }
+
+  /** Lowercase substring + subsequence match. */
+  private _fuzzyMatch(haystack: string, needle: string): boolean {
+    if (!needle) {
+      return true;
+    }
+    const h = haystack.toLowerCase();
+    const n = needle.toLowerCase();
+    if (h.includes(n)) {
+      return true;
+    }
+    let j = 0;
+    for (let i = 0; i < h.length && j < n.length; i++) {
+      if (h[i] === n[j]) {
+        j += 1;
+      }
+    }
+    return j === n.length;
+  }
+
+  private _matchesFilter(s: ISession): boolean {
+    const q = this._filter.trim();
+    if (!q) {
+      return true;
+    }
+    return (
+      this._fuzzyMatch(s.name, q) ||
+      this._fuzzyMatch(s.project_path, q) ||
+      this._fuzzyMatch(this._lookupName(s), q)
+    );
   }
 
   private _showLoading(): void {
@@ -272,55 +315,32 @@ export class ClaudeCodeSessionsWidget extends Widget {
         return;
       }
 
-      // 3. No matching open terminal - create a new one rooted at this folder.
-      const widget: any = await this._app.commands.execute(
-        'terminal:create-new',
-        { cwd: session.project_path }
+      // 3. No matching terminal - spawn a new one with `claude --resume <id>`
+      // as the pty's only process (no shell). Server-side endpoint calls
+      // terminal_manager.create(shell_command=[claude, --resume, sid], cwd=...)
+      // and returns the terminal name; we then attach JL's standard widget
+      // via terminal:open. When claude exits, the tab closes.
+      const launched = await requestAPI<ILaunchTerminalResponse>(
+        'launch-terminal',
+        this._serverSettings,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            project_path: session.project_path,
+            session_id: session.session_id
+          })
+        }
       );
-
+      const widget: any = await this._app.commands.execute('terminal:open', {
+        name: launched.terminal_name
+      });
       if (widget?.id) {
         this._terminalsByPath.set(session.project_path, widget);
         this._wireTerminalDisposal(session.project_path, widget);
       }
-
-      const term = widget?.content?.session ?? widget?.session;
-      const command = `cd ${this._shellQuote(session.project_path)} && claude --resume ${session.session_id}\r`;
-
-      if (!term || typeof term.send !== 'function') {
-        this._statusEl.textContent = `Run in a terminal: cd ${session.project_path} && claude --resume ${session.session_id}`;
-        return;
-      }
-
-      // Wait for the first message from the terminal (shell prompt) before
-      // injecting input - sending too early arrives before the shell is ready.
-      let sent = false;
-      const send = () => {
-        if (sent) {
-          return;
-        }
-        sent = true;
-        term.send({ type: 'stdin', content: [command] });
-      };
-
-      if (term.messageReceived?.connect) {
-        const handler = () => {
-          term.messageReceived.disconnect(handler);
-          // Tiny additional delay so the prompt is rendered and ready for input
-          setTimeout(send, 150);
-        };
-        term.messageReceived.connect(handler);
-        // Hard fallback: if no message arrives within 2s, send anyway
-        setTimeout(send, 2000);
-      } else {
-        setTimeout(send, 600);
-      }
     } catch (err) {
       this._showError(err);
     }
-  }
-
-  private _shellQuote(s: string): string {
-    return `'${s.replace(/'/g, "'\\''")}'`;
   }
 
   private async _findTerminalForCwd(projectPath: string): Promise<any | null> {
@@ -447,14 +467,16 @@ export class ClaudeCodeSessionsWidget extends Widget {
       return;
     }
 
-    // Compute disambiguated display names once per render.
+    // Compute disambiguated display names once per render (against the
+    // full set so suffixes stay stable when filtering narrows the view).
     this._displayNames = this._disambiguate(sessions);
 
-    const favourites = sessions.filter(s => s.favourite);
-    const recent = [...sessions]
+    const filtered = sessions.filter(s => this._matchesFilter(s));
+    const favourites = filtered.filter(s => s.favourite);
+    const recent = [...filtered]
       .sort((a, b) => b.file_mtime - a.file_mtime)
       .slice(0, RECENT_LIMIT);
-    const all = [...sessions].sort((a, b) =>
+    const all = [...filtered].sort((a, b) =>
       this._lookupName(a).localeCompare(this._lookupName(b))
     );
 
@@ -761,4 +783,5 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private readonly _rootDir: string;
   private _resolveNames: boolean = true;
   private _displayNames: Map<string, string> = new Map();
+  private _filter: string = '';
 }
