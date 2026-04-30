@@ -1,6 +1,6 @@
 {
     "name": "jupyterlab_claude_code_extension",
-    "version": "1.0.16",
+    "version": "1.0.17",
     "description": "Browse, resume, and manage your Claude Code CLI sessions from a JupyterLab side panel. One click reactivates the right terminal - no duplicate tabs, live remote-control indicator, and favourites for the projects you keep coming back to.",
     "keywords": [
         "jupyter",
@@ -56,7 +56,6 @@
         "watch:labextension": "jupyter labextension watch ."
     },
     "dependencies": {
-        "@jupyterlab/application": "^4.0.0",
         "@jupyterlab/apputils": "^4.0.0",
         "@jupyterlab/coreutils": "^6.0.0",
         "@jupyterlab/services": "^7.0.0",

@@ -2096,7 +2096,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jupyterlab/application@npm:^4.0.0, @jupyterlab/application@npm:^4.5.7":
+"@jupyterlab/application@npm:^4.5.7":
   version: 4.5.7
   resolution: "@jupyterlab/application@npm:4.5.7"
   dependencies:
@@ -7787,7 +7787,6 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "jupyterlab_claude_code_extension@workspace:."
   dependencies:
-    "@jupyterlab/application": ^4.0.0
     "@jupyterlab/apputils": ^4.0.0
     "@jupyterlab/builder": ^4.0.0
     "@jupyterlab/coreutils": ^6.0.0

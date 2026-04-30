@@ -39,9 +39,19 @@ def _load_json(path: Path) -> Any:
 
 
 def _pid_alive(pid: int) -> bool:
+    """Return True if PID exists.
+
+    ``PermissionError`` from ``os.kill(pid, 0)`` means the process is alive
+    but the caller cannot signal it (e.g. PID 1 on GitHub Actions runners
+    when running as a non-root user) - that's still alive.
+    """
     try:
         os.kill(pid, 0)
-    except (ProcessLookupError, PermissionError, OSError):
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
         return False
     return True
 
