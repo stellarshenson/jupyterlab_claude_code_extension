@@ -8,20 +8,27 @@
 [![Brought To You By KOLOMOLO](https://img.shields.io/badge/Brought%20To%20You%20By-KOLOMOLO-00ffff?style=flat)](https://kolomolo.com)
 [![Donate PayPal](https://img.shields.io/badge/Donate-PayPal-blue?style=flat)](https://www.paypal.com/donate/?hosted_button_id=B4KPBJDLLXTSA)
 
-Manage Claude Code CLI sessions from inside JupyterLab. A side panel lists your recent, all, and favourite Claude Code sessions, shows which ones are enabled for remote control, and lets you jump straight back into a session by opening Claude Code in a terminal at the session's directory.
+Manage Claude Code CLI sessions from inside JupyterLab. A left-sidebar panel lists every project under `~/.claude/projects/` deduplicated to one row per folder, marks live remote-control sessions with a green dot, and lets you jump back into any session by opening (or reactivating) a terminal pwd'd to that project and auto-running `claude --resume <id>`.
+
+![Claude Code Sessions panel](.resources/screenshot.png)
 
 ## Features
 
-- **Session panel** - dedicated JupyterLab side panel listing recent, all, and favourite Claude Code sessions
-- **Remote control indicator** - inline marker showing which sessions are currently enabled for remote control
-- **One-click resume** - click a session to open Claude Code in a terminal at that session's working directory and continue
-- **Context menu management** - right-click a session to remove it from the list
-- **JupyterLab 4 native integration** - uses the standard Lumino sidebar, commands, and context-menu surfaces
+- **Three-section side panel** - Favourites, Recent (top 10 by activity), and All. Each section scrolls independently; Favourites disappears when empty
+- **Live remote-control indicator** - green dot on rows whose `~/.claude/sessions/<pid>.json` is alive (verified via `os.kill(pid, 0)`)
+- **One-click resume** - click a row to find an existing terminal pwd'd to that project (queried server-side from the pty's process tree) and reactivate its tab; only spawns a fresh terminal if none matches. Concurrent rapid clicks are coalesced
+- **Smart name resolution** - shows the user-set `/rename` name when available; auto-detected names (volatile across the same `sessionId` or 3+ token lowercase-kebab) fall back to the folder basename. Toggle the behaviour via the `resolveSessionNames` setting
+- **Path-segment disambiguation** - when two sessions share the same display name, the row reveals the minimum number of trailing path segments needed for each to be unique
+- **Favourites** - star a session via the right-click menu; persisted server-side at `~/.claude/jupyterlab_claude_code_extension.json`
+- **Layout restorer** - panel visibility persists across JupyterLab reloads
+- **Auto-disabled** when the `claude` binary is not on `PATH`
+- **Hover tooltip** with relative path (vs JL root), last activity, message count, branch, first prompt, session id
 
 ## Requirements
 
 - JupyterLab >= 4.0.0
 - Python >= 3.10
+- `claude` CLI on `PATH`
 
 ## Install
 
