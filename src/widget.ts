@@ -186,23 +186,78 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._statusEl = status;
   }
 
-  /** Lowercase substring + subsequence match. */
+  /** Normalise strings for filter comparison: NFD-decompose, strip combining
+   * diacritic marks, lowercase, and collapse separators (`-`, `_`, `.`, `/`,
+   * whitespace) entirely. So "foo-bar", "foo_bar", "foo bar", "Foo Bar" all
+   * compare equal as "foobar".
+   */
+  private _normalize(s: string): string {
+    return s
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[\s\-_./]+/g, '');
+  }
+
+  /** Strict fuzzy match: substring on normalised strings, with up to 2%
+   * Levenshtein tolerance for queries of 6+ chars (so the 98% threshold
+   * only relaxes substring strictness when the query is long enough that
+   * 2% rounds to a nonzero edit budget - effectively substring-only for
+   * short queries).
+   */
   private _fuzzyMatch(haystack: string, needle: string): boolean {
     if (!needle) {
       return true;
     }
-    const h = haystack.toLowerCase();
-    const n = needle.toLowerCase();
+    const h = this._normalize(haystack);
+    const n = this._normalize(needle);
+    if (!n) {
+      return true;
+    }
     if (h.includes(n)) {
       return true;
     }
-    let j = 0;
-    for (let i = 0; i < h.length && j < n.length; i++) {
-      if (h[i] === n[j]) {
-        j += 1;
+    const tol = Math.floor(n.length * 0.02);
+    if (tol === 0) {
+      return false;
+    }
+    for (let len = n.length - tol; len <= n.length + tol; len += 1) {
+      if (len <= 0) {
+        continue;
+      }
+      for (let i = 0; i + len <= h.length; i += 1) {
+        if (this._levenshtein(h.slice(i, i + len), n) <= tol) {
+          return true;
+        }
       }
     }
-    return j === n.length;
+    return false;
+  }
+
+  private _levenshtein(a: string, b: string): number {
+    const m = a.length;
+    const n = b.length;
+    if (m === 0) {
+      return n;
+    }
+    if (n === 0) {
+      return m;
+    }
+    const dp: number[] = new Array(n + 1);
+    for (let j = 0; j <= n; j += 1) {
+      dp[j] = j;
+    }
+    for (let i = 1; i <= m; i += 1) {
+      let prev = dp[0];
+      dp[0] = i;
+      for (let j = 1; j <= n; j += 1) {
+        const tmp = dp[j];
+        dp[j] =
+          a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+        prev = tmp;
+      }
+    }
+    return dp[n];
   }
 
   private _matchesFilter(s: ISession): boolean {
