@@ -5,6 +5,7 @@ import {
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
+import { ITerminalTracker } from '@jupyterlab/terminal';
 
 import { requestAPI } from './request';
 import { IStatusResponse } from './types';
@@ -19,12 +20,13 @@ const plugin: JupyterFrontEndPlugin<void> = {
     'Side panel listing Claude Code sessions per project folder, with remote-control indicator, favourites, and one-click resume in a terminal.',
   autoStart: true,
   requires: [ILabShell],
-  optional: [ILayoutRestorer, ISettingRegistry],
+  optional: [ILayoutRestorer, ISettingRegistry, ITerminalTracker],
   activate: async (
     app: JupyterFrontEnd,
     labShell: ILabShell,
     restorer: ILayoutRestorer | null,
-    settingRegistry: ISettingRegistry | null
+    settingRegistry: ISettingRegistry | null,
+    terminalTracker: ITerminalTracker | null
   ) => {
     const settings = app.serviceManager.serverSettings;
 
@@ -46,7 +48,11 @@ const plugin: JupyterFrontEndPlugin<void> = {
       return;
     }
 
-    const widget = new ClaudeCodeSessionsWidget(app, status.root_dir || '');
+    const widget = new ClaudeCodeSessionsWidget(
+      app,
+      status.root_dir || '',
+      terminalTracker
+    );
     labShell.add(widget, 'left', { rank: 600 });
 
     if (settingRegistry) {

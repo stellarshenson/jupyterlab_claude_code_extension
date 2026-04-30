@@ -1,5 +1,6 @@
 import { JupyterFrontEnd } from '@jupyterlab/application';
 import { ServerConnection } from '@jupyterlab/services';
+import { ITerminalTracker } from '@jupyterlab/terminal';
 import { CommandRegistry } from '@lumino/commands';
 import { Menu, Widget } from '@lumino/widgets';
 import { Message } from '@lumino/messaging';
@@ -68,35 +69,30 @@ function saveExpanded(state: Record<SectionKey, boolean>): void {
   }
 }
 
-const TERMINALS_STORAGE_KEY = 'jupyterlab_claude_code_extension:terminals';
-
-function loadTerminalMap(): Record<string, string> {
-  try {
-    const raw = window.localStorage.getItem(TERMINALS_STORAGE_KEY);
-    if (!raw) {
-      return {};
-    }
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch (_err) {
-    return {};
-  }
+interface ITerminalCwdResponse {
+  terminal_name: string;
+  cwds: string[];
 }
 
-function saveTerminalMap(map: Record<string, string>): void {
-  try {
-    window.localStorage.setItem(TERMINALS_STORAGE_KEY, JSON.stringify(map));
-  } catch (_err) {
-    // ignore
-  }
+// Drop any pre-v0.6.18 localStorage entries from previous schemes - they
+// were unreliable and we now interrogate JL's terminal manager directly.
+try {
+  window.localStorage.removeItem('jupyterlab_claude_code_extension:terminals');
+} catch (_err) {
+  // ignore
 }
 
 export class ClaudeCodeSessionsWidget extends Widget {
-  constructor(app: JupyterFrontEnd, rootDir: string) {
+  constructor(
+    app: JupyterFrontEnd,
+    rootDir: string,
+    terminalTracker: ITerminalTracker | null = null
+  ) {
     super();
     this._app = app;
     this._serverSettings = app.serviceManager.serverSettings;
     this._rootDir = rootDir.replace(/\/+$/, '');
+    this._terminalTracker = terminalTracker;
 
     this.id = 'jupyterlab-claude-code-extension';
     this.title.icon = claudeIcon;
@@ -239,47 +235,50 @@ export class ClaudeCodeSessionsWidget extends Widget {
   // -------------------------------------------------------------- terminal
 
   private async _resumeInTerminal(session: ISession): Promise<void> {
+    // Coalesce concurrent clicks on the same row - subsequent clicks attach
+    // to the in-flight promise instead of creating their own terminal.
+    const inFlight = this._pendingByPath.get(session.project_path);
+    if (inFlight) {
+      return inFlight;
+    }
+    const promise = this._doResumeInTerminal(session).finally(() => {
+      this._pendingByPath.delete(session.project_path);
+    });
+    this._pendingByPath.set(session.project_path, promise);
+    return promise;
+  }
+
+  private async _doResumeInTerminal(session: ISession): Promise<void> {
     try {
-      // 1. In-memory cache covers same-page-load clicks
-      const existing = this._terminalsByPath.get(session.project_path);
-      if (existing && !existing.isDisposed) {
-        this._app.shell.activateById(existing.id);
+      // 1. In-memory microcache - covers rapid-click and post-creation reuse
+      // before the new widget propagates fully through the tracker. Cleared
+      // on widget disposal. NOT persisted to localStorage.
+      const cached = this._terminalsByPath.get(session.project_path);
+      if (cached && !cached.isDisposed) {
+        this._app.shell.activateById(cached.id);
         return;
       }
 
-      // 2. Persisted map - locate a live terminal widget by name across reloads
-      const persistMap = loadTerminalMap();
-      const persistedName = persistMap[session.project_path];
-      if (persistedName) {
-        for (const w of this._app.shell.widgets('main')) {
-          const candidate = w as any;
-          if (candidate?.content?.session?.name === persistedName) {
-            this._terminalsByPath.set(session.project_path, candidate);
-            this._wireTerminalDisposal(session.project_path, candidate);
-            this._app.shell.activateById(candidate.id);
-            return;
-          }
-        }
-        // Stale entry - terminal was closed in a previous JL session
-        delete persistMap[session.project_path];
-        saveTerminalMap(persistMap);
+      // 2. Walk every live terminal widget JL knows about and ask the
+      // server for the cwd of EVERY process in its pty's tree. Match if
+      // any one of them equals project_path.
+      const found = await this._findTerminalForCwd(session.project_path);
+      if (found) {
+        this._terminalsByPath.set(session.project_path, found);
+        this._wireTerminalDisposal(session.project_path, found);
+        this._app.shell.activateById(found.id);
+        return;
       }
 
-      // 3. Create a new terminal
+      // 3. No matching open terminal - create a new one rooted at this folder.
       const widget: any = await this._app.commands.execute(
         'terminal:create-new',
         { cwd: session.project_path }
       );
 
-      if (widget && typeof widget.id === 'string') {
+      if (widget?.id) {
         this._terminalsByPath.set(session.project_path, widget);
         this._wireTerminalDisposal(session.project_path, widget);
-        const termName = widget?.content?.session?.name;
-        if (typeof termName === 'string') {
-          const fresh = loadTerminalMap();
-          fresh[session.project_path] = termName;
-          saveTerminalMap(fresh);
-        }
       }
 
       const term = widget?.content?.session ?? widget?.session;
@@ -323,19 +322,48 @@ export class ClaudeCodeSessionsWidget extends Widget {
     return `'${s.replace(/'/g, `'\\''`)}'`;
   }
 
+  private async _findTerminalForCwd(projectPath: string): Promise<any | null> {
+    if (!this._terminalTracker) {
+      return null;
+    }
+    const candidates: any[] = [];
+    this._terminalTracker.forEach((widget: any) => {
+      if (widget && !widget.isDisposed) {
+        candidates.push(widget);
+      }
+    });
+    const target = projectPath.replace(/\/+$/, '');
+    for (const widget of candidates) {
+      const sessName: string | undefined = widget?.content?.session?.name;
+      if (typeof sessName !== 'string' || !sessName) {
+        continue;
+      }
+      try {
+        const data = await requestAPI<ITerminalCwdResponse>(
+          `terminal-cwd/${encodeURIComponent(sessName)}`,
+          this._serverSettings
+        );
+        const cwds = Array.isArray(data?.cwds) ? data.cwds : [];
+        for (const cwd of cwds) {
+          if ((cwd || '').replace(/\/+$/, '') === target) {
+            return widget;
+          }
+        }
+      } catch (_err) {
+        // Backend may report 404 for terminals that disappeared between
+        // tracker enumeration and fetch - skip and continue.
+      }
+    }
+    return null;
+  }
+
   private _wireTerminalDisposal(projectPath: string, widget: any): void {
     if (!widget?.disposed?.connect) {
       return;
     }
     widget.disposed.connect(() => {
-      const current = this._terminalsByPath.get(projectPath);
-      if (current === widget) {
+      if (this._terminalsByPath.get(projectPath) === widget) {
         this._terminalsByPath.delete(projectPath);
-      }
-      const persistMap = loadTerminalMap();
-      if (persistMap[projectPath]) {
-        delete persistMap[projectPath];
-        saveTerminalMap(persistMap);
       }
     });
   }
@@ -431,7 +459,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
       this._lookupName(a).localeCompare(this._lookupName(b))
     );
 
-    this._renderSection('favourites', favourites);
+    if (favourites.length > 0) {
+      this._renderSection('favourites', favourites);
+    }
     this._renderSection('recent', recent);
     this._renderSection('all', all);
 
@@ -724,7 +754,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private _activeRowEl: HTMLElement | null = null;
   private _pollHandle: number | null = null;
   private readonly _removingPaths: Set<string> = new Set();
+  private readonly _terminalTracker: ITerminalTracker | null;
   private readonly _terminalsByPath: Map<string, any> = new Map();
+  private readonly _pendingByPath: Map<string, Promise<void>> = new Map();
   private readonly _rootDir: string;
   private _resolveNames: boolean = true;
   private _displayNames: Map<string, string> = new Map();
