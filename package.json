@@ -1,6 +1,6 @@
 {
     "name": "jupyterlab_claude_code_extension",
-    "version": "0.6.21",
+    "version": "1.0.16",
     "description": "Jupyterlab extension to help with ai assisted coding with Claude Code. It implements a tool panel (like jupyterlab_trash_mgmt_extension) with recent, all and favourite claude code sessions, it also shows if a session is currently enabled for remote control; It also allows to remove sessions (using context menu); When sesison is clicked - opens claude code in terminal in that folder and continues",
     "keywords": [
         "jupyter",

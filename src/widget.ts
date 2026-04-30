@@ -6,12 +6,7 @@ import { Menu, Widget } from '@lumino/widgets';
 import { Message } from '@lumino/messaging';
 
 import { requestAPI } from './request';
-import {
-  claudeIcon,
-  refreshIcon,
-  removeIcon,
-  starFilledIcon
-} from './icons';
+import { claudeIcon, refreshIcon, removeIcon, starFilledIcon } from './icons';
 import {
   IFavouriteResponse,
   IRemoveResponse,
@@ -53,8 +48,7 @@ function loadExpanded(): Record<SectionKey, boolean> {
         typeof parsed?.recent === 'boolean'
           ? parsed.recent
           : DEFAULT_EXPANDED.recent,
-      all:
-        typeof parsed?.all === 'boolean' ? parsed.all : DEFAULT_EXPANDED.all
+      all: typeof parsed?.all === 'boolean' ? parsed.all : DEFAULT_EXPANDED.all
     };
   } catch (_err) {
     return { ...DEFAULT_EXPANDED };
@@ -197,13 +191,17 @@ export class ClaudeCodeSessionsWidget extends Widget {
     session.favourite = next;
     this._render();
     try {
-      await requestAPI<IFavouriteResponse>('sessions/favourite', this._serverSettings, {
-        method: 'POST',
-        body: JSON.stringify({
-          project_path: session.project_path,
-          favourite: next
-        })
-      });
+      await requestAPI<IFavouriteResponse>(
+        'sessions/favourite',
+        this._serverSettings,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            project_path: session.project_path,
+            favourite: next
+          })
+        }
+      );
     } catch (err) {
       // Roll back on failure
       session.favourite = !next;
@@ -216,10 +214,14 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._removingPaths.add(session.encoded_path);
     this._render();
     try {
-      await requestAPI<IRemoveResponse>('sessions/remove', this._serverSettings, {
-        method: 'POST',
-        body: JSON.stringify({ encoded_path: session.encoded_path })
-      });
+      await requestAPI<IRemoveResponse>(
+        'sessions/remove',
+        this._serverSettings,
+        {
+          method: 'POST',
+          body: JSON.stringify({ encoded_path: session.encoded_path })
+        }
+      );
       // Drop locally and re-render; a full refresh will follow on next poll
       this._sessions = (this._sessions ?? []).filter(
         s => s.encoded_path !== session.encoded_path
@@ -285,8 +287,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
       const command = `cd ${this._shellQuote(session.project_path)} && claude --resume ${session.session_id}\r`;
 
       if (!term || typeof term.send !== 'function') {
-        this._statusEl.textContent =
-          `Run in a terminal: cd ${session.project_path} && claude --resume ${session.session_id}`;
+        this._statusEl.textContent = `Run in a terminal: cd ${session.project_path} && claude --resume ${session.session_id}`;
         return;
       }
 
@@ -319,7 +320,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
   }
 
   private _shellQuote(s: string): string {
-    return `'${s.replace(/'/g, `'\\''`)}'`;
+    return `'${s.replace(/'/g, "'\\''")}'`;
   }
 
   private async _findTerminalForCwd(projectPath: string): Promise<any | null> {
@@ -399,9 +400,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
         out.set(group[0].project_path, name);
         continue;
       }
-      const segs = group.map(r =>
-        r.project_path.split('/').filter(Boolean)
-      );
+      const segs = group.map(r => r.project_path.split('/').filter(Boolean));
       const max = Math.max(...segs.map(s => s.length));
       let depth = 1;
       while (depth <= max) {
@@ -513,7 +512,8 @@ export class ClaudeCodeSessionsWidget extends Widget {
       if (items.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'jp-ClaudeSessionsPanel-emptySection';
-        empty.textContent = key === 'favourites' ? 'No favourites yet.' : 'Empty.';
+        empty.textContent =
+          key === 'favourites' ? 'No favourites yet.' : 'Empty.';
         list.appendChild(empty);
       } else {
         for (const item of items) {
@@ -585,9 +585,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
   }
 
   private _lookupName(s: ISession): string {
-    return (
-      this._displayNames.get(s.project_path) ?? this._displayName(s)
-    );
+    return this._displayNames.get(s.project_path) ?? this._displayName(s);
   }
 
   private _buildRowTooltip(s: ISession): string {
@@ -606,9 +604,10 @@ export class ClaudeCodeSessionsWidget extends Widget {
       lines.push('Remote control: active');
     }
     if (s.first_prompt) {
-      const trimmed = s.first_prompt.length > 100
-        ? `${s.first_prompt.slice(0, 100)}...`
-        : s.first_prompt;
+      const trimmed =
+        s.first_prompt.length > 100
+          ? `${s.first_prompt.slice(0, 100)}...`
+          : s.first_prompt;
       lines.push(`First prompt: ${trimmed}`);
     }
     if (s.session_id) {
@@ -706,7 +705,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._contextMenu = new Menu({ commands: this._commands });
     this._contextMenu.addClass('jp-ClaudeSessionsContextMenu');
     this._contextMenu.addItem({ command: 'claude-code-sessions:resume' });
-    this._contextMenu.addItem({ command: 'claude-code-sessions:toggle-favourite' });
+    this._contextMenu.addItem({
+      command: 'claude-code-sessions:toggle-favourite'
+    });
     this._contextMenu.addItem({ type: 'separator' });
     this._contextMenu.addItem({ command: 'claude-code-sessions:remove' });
 

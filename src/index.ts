@@ -59,7 +59,8 @@ const plugin: JupyterFrontEndPlugin<void> = {
       try {
         const settings = await settingRegistry.load(PLUGIN_ID);
         const apply = (): void => {
-          const resolve = settings.get('resolveSessionNames').composite as boolean;
+          const resolve = settings.get('resolveSessionNames')
+            .composite as boolean;
           widget.setResolveSessionNames(resolve !== false);
         };
         apply();

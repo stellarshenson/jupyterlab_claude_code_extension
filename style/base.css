@@ -197,23 +197,28 @@
   height: 12px;
 }
 
-@keyframes jp-ClaudeSessionsPanel-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+@keyframes jp-claude-sessions-panel-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .jp-ClaudeSessionsPanel-iconButton.jp-mod-spinning svg {
-  animation: jp-ClaudeSessionsPanel-spin 0.9s linear infinite;
+  animation: jp-claude-sessions-panel-spin 0.9s linear infinite;
 }
 
-.jp-ClaudeSessionsPanel-spinner {
+.jp-claude-sessions-panel-spinner {
   flex: 0 0 auto;
   width: 12px;
   height: 12px;
   border-radius: 50%;
   border: 2px solid var(--jp-border-color2);
   border-top-color: var(--jp-brand-color1);
-  animation: jp-ClaudeSessionsPanel-spin 0.7s linear infinite;
+  animation: jp-claude-sessions-panel-spin 0.7s linear infinite;
   display: inline-block;
 }
 

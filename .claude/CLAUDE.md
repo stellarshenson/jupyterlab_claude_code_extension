@@ -27,6 +27,7 @@ indicates whether a session is enabled for remote control, allows session remova
 and opens Claude Code in a terminal at the session's directory when clicked.
 
 **Technology Stack**:
+
 - TypeScript + Lumino frontend (`src/`) packaged as an `npm` labextension
 - Python `jupyter_server` extension (`jupyterlab_claude_code_extension/`) providing the backend API
 - `hatchling` + `hatch-nodejs-version` + `hatch-jupyter-builder` for build orchestration
@@ -34,6 +35,7 @@ and opens Claude Code in a terminal at the session's directory when clicked.
 - `pytest` for server tests, `jest` for frontend unit tests, `Playwright` + Galata for UI integration tests
 
 **Runtime requirements**:
+
 - Python `>= 3.10`
 - JupyterLab `>= 4.0.0`
 - `jupyter_server >= 2.4.0, < 3`
@@ -108,7 +110,7 @@ All package installation in this project MUST go through `make install`:
 ## Strengthened Rules
 
 - **No emojis** anywhere in this project (workspace rule strictly enforced - extension UI text, README, code comments, journal entries)
-- **No em-dashes, no arrow symbols** in any markdown - use ` - ` and `->` per workspace typography rules
+- **No em-dashes, no arrow symbols** in any markdown - use `-` and `->` per workspace typography rules
 - **`make install` is the only blessed install path** (see Install Discipline above)
 - **Skills `jupyterlab-extension` and `playwright` are mandatory references** for source / UI / CI work (see Required Workspace Skills above)
 - **Makefile version pin** must be re-checked every session touching build flow (see Makefile Version Pin above)

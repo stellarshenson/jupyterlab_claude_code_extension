@@ -2,6 +2,7 @@
   "title": "Claude Code Sessions",
   "description": "Settings for the Claude Code sessions side panel.",
   "type": "object",
+  "jupyter.lab.setting-icon": "jupyterlab_claude_code_extension:claude",
   "jupyter.lab.setting-icon-label": "Claude Code Sessions",
   "properties": {
     "resolveSessionNames": {
