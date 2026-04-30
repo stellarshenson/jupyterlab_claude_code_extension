@@ -62,6 +62,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
           const resolve = settings.get('resolveSessionNames')
             .composite as boolean;
           widget.setResolveSessionNames(resolve !== false);
+          const limit = settings.get('recentLimit').composite as number;
+          if (typeof limit === 'number') {
+            widget.setRecentLimit(limit);
+          }
         };
         apply();
         settings.changed.connect(apply);

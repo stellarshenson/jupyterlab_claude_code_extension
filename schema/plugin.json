@@ -10,6 +10,14 @@
       "title": "Resolve session names",
       "description": "When enabled (default), the panel shows the user-set session name (via /rename) where one is available. When disabled, every row is shown by its project folder name regardless of any rename.",
       "default": true
+    },
+    "recentLimit": {
+      "type": "integer",
+      "title": "Recent items count",
+      "description": "Number of rows shown in the Recent section, sorted by last activity (descending).",
+      "default": 10,
+      "minimum": 1,
+      "maximum": 100
     }
   },
   "additionalProperties": false

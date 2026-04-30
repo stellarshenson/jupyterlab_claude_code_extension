@@ -16,7 +16,7 @@ import {
 } from './types';
 
 const POLL_INTERVAL_MS = 10_000;
-const RECENT_LIMIT = 10;
+const DEFAULT_RECENT_LIMIT = 10;
 const EXPANDED_STORAGE_KEY = 'jupyterlab_claude_code_extension:expanded';
 
 type SectionKey = 'favourites' | 'recent' | 'all';
@@ -112,6 +112,16 @@ export class ClaudeCodeSessionsWidget extends Widget {
       return;
     }
     this._resolveNames = on;
+    this._render();
+  }
+
+  /** Set how many rows the Recent section displays. */
+  setRecentLimit(n: number): void {
+    const clamped = Math.max(1, Math.min(100, Math.floor(n)));
+    if (this._recentLimit === clamped) {
+      return;
+    }
+    this._recentLimit = clamped;
     this._render();
   }
 
@@ -475,7 +485,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
     const favourites = filtered.filter(s => s.favourite);
     const recent = [...filtered]
       .sort((a, b) => b.file_mtime - a.file_mtime)
-      .slice(0, RECENT_LIMIT);
+      .slice(0, this._recentLimit);
     const all = [...filtered].sort((a, b) =>
       this._lookupName(a).localeCompare(this._lookupName(b))
     );
@@ -782,6 +792,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private readonly _pendingByPath: Map<string, Promise<void>> = new Map();
   private readonly _rootDir: string;
   private _resolveNames: boolean = true;
+  private _recentLimit: number = DEFAULT_RECENT_LIMIT;
   private _displayNames: Map<string, string> = new Map();
   private _filter: string = '';
 }
