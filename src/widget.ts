@@ -748,13 +748,6 @@ export class ClaudeCodeSessionsWidget extends Widget {
     if (s.remote_control) {
       lines.push('Remote control: active');
     }
-    if (s.first_prompt) {
-      const trimmed =
-        s.first_prompt.length > 100
-          ? `${s.first_prompt.slice(0, 100)}...`
-          : s.first_prompt;
-      lines.push(`First prompt: ${trimmed}`);
-    }
     if (s.session_id) {
       lines.push(`Session id: ${s.session_id}`);
     }

@@ -173,6 +173,50 @@ def _pick_latest_entry(entries: list[dict]) -> dict | None:
     )
 
 
+def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
+    """Pick the latest entry for a project dir, trusting the filesystem.
+
+    Claude's ``sessions-index.json`` can drift - an interrupted write or a
+    crash can leave it referencing only an older sessionId while newer
+    JSONLs sit on disk. To stay robust we scan ``*.jsonl`` ourselves, pick
+    the file with the highest fs mtime, and enrich it with the matching
+    index entry's metadata (summary, firstPrompt, ...) when available.
+    Falls back to a minimal record otherwise.
+    """
+    jsonls = list(project_dir.glob("*.jsonl"))
+    if not jsonls:
+        return None
+    latest_jsonl = max(jsonls, key=lambda p: p.stat().st_mtime)
+    sid = latest_jsonl.stem
+    fs_mtime = int(latest_jsonl.stat().st_mtime * 1000)
+
+    indexed: dict | None = None
+    if isinstance(index, dict):
+        entries = index.get("entries") or []
+        for e in entries:
+            if isinstance(e, dict) and e.get("sessionId") == sid:
+                indexed = e
+                break
+
+    if indexed is not None:
+        latest = dict(indexed)
+        latest["fileMtime"] = max(int(latest.get("fileMtime") or 0), fs_mtime)
+        return latest
+
+    return {
+        "sessionId": sid,
+        "fullPath": str(latest_jsonl),
+        "fileMtime": fs_mtime,
+        "summary": "",
+        "firstPrompt": "",
+        "messageCount": 0,
+        "created": None,
+        "modified": None,
+        "gitBranch": None,
+        "projectPath": _scan_jsonl_for_cwd(latest_jsonl),
+    }
+
+
 _JSONL_CWD_SCAN_LIMIT = 50
 
 
@@ -265,17 +309,10 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
         index = _load_json(index_path) if index_path.is_file() else None
 
         project_path: str | None = None
-        latest: dict | None = None
-
         if isinstance(index, dict):
             project_path = index.get("originalPath") if isinstance(index.get("originalPath"), str) else None
-            entries = index.get("entries")
-            if isinstance(entries, list):
-                latest = _pick_latest_entry([e for e in entries if isinstance(e, dict)])
 
-        if latest is None:
-            latest = _fallback_from_jsonl(project_dir)
-
+        latest = _resolve_latest(project_dir, index)
         if latest is None:
             continue
 
