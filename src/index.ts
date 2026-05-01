@@ -9,7 +9,7 @@ import { ITerminalTracker } from '@jupyterlab/terminal';
 
 import { requestAPI } from './request';
 import { IStatusResponse } from './types';
-import { ClaudeCodeSessionsWidget } from './widget';
+import { ClaudeCodeSessionsWidget, PresentationMode } from './widget';
 
 const PLUGIN_ID = 'jupyterlab_claude_code_extension:plugin';
 const WIDGET_ID = 'jupyterlab-claude-code-extension';
@@ -59,9 +59,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
       try {
         const settings = await settingRegistry.load(PLUGIN_ID);
         const apply = (): void => {
-          const resolve = settings.get('resolveSessionNames')
-            .composite as boolean;
-          widget.setResolveSessionNames(resolve !== false);
+          const mode = settings.get('presentationMode').composite as string;
+          if (mode === 'session' || mode === 'folder' || mode === 'path') {
+            widget.setPresentationMode(mode as PresentationMode);
+          }
           const limit = settings.get('recentLimit').composite as number;
           if (typeof limit === 'number') {
             widget.setRecentLimit(limit);

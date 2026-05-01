@@ -5,11 +5,12 @@
   "jupyter.lab.setting-icon": "jupyterlab_claude_code_extension:claude",
   "jupyter.lab.setting-icon-label": "Claude Code Sessions",
   "properties": {
-    "resolveSessionNames": {
-      "type": "boolean",
-      "title": "Resolve session names",
-      "description": "When enabled (default), the panel shows the user-set session name (via /rename) where one is available. When disabled, every row is shown by its project folder name regardless of any rename.",
-      "default": true
+    "presentationMode": {
+      "type": "string",
+      "title": "Presentation mode",
+      "description": "How session rows are labelled. `session` (default) shows the user-set session name from /rename, falling back to the project folder name. `folder` always shows the project folder name. `path` shows the project path relative to the JupyterLab notebook root (absolute if outside it).",
+      "enum": ["session", "folder", "path"],
+      "default": "session"
     },
     "recentLimit": {
       "type": "integer",

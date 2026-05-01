@@ -28,6 +28,10 @@ const EXPANDED_STORAGE_KEY = 'jupyterlab_claude_code_extension:expanded';
 
 type SectionKey = 'favourites' | 'recent' | 'all';
 
+export type PresentationMode = 'session' | 'folder' | 'path';
+
+const DEFAULT_PRESENTATION_MODE: PresentationMode = 'session';
+
 const SECTION_LABELS: Record<SectionKey, string> = {
   favourites: 'Favourites',
   recent: 'Recent',
@@ -113,12 +117,12 @@ export class ClaudeCodeSessionsWidget extends Widget {
       .finally(() => this._setRefreshSpinning(false));
   }
 
-  /** Toggle whether explicit ``/rename`` names are honoured. */
-  setResolveSessionNames(on: boolean): void {
-    if (this._resolveNames === on) {
+  /** Choose how rows are labelled: by session name, folder name, or path. */
+  setPresentationMode(mode: PresentationMode): void {
+    if (this._presentationMode === mode) {
       return;
     }
-    this._resolveNames = on;
+    this._presentationMode = mode;
     this._render();
   }
 
@@ -501,12 +505,19 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
   // -------------------------------------------------------------- rendering
 
-  /** Apply the resolve-names setting + path-segment disambiguation. */
+  /** Apply the presentation-mode setting (path-segment disambiguation is
+   * handled separately in ``_disambiguate``). */
   private _displayName(s: ISession): string {
-    if (!this._resolveNames) {
-      return this._basename(s.project_path) || s.encoded_path;
+    const folder = this._basename(s.project_path) || s.encoded_path;
+    switch (this._presentationMode) {
+      case 'folder':
+        return folder;
+      case 'path':
+        return this._displayPath(s.project_path) || folder;
+      case 'session':
+      default:
+        return s.name || folder;
     }
-    return s.name || this._basename(s.project_path) || s.encoded_path;
   }
 
   private _basename(p: string): string {
@@ -906,7 +917,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private readonly _terminalsByPath: Map<string, any> = new Map();
   private readonly _pendingByPath: Map<string, Promise<void>> = new Map();
   private readonly _rootDir: string;
-  private _resolveNames: boolean = true;
+  private _presentationMode: PresentationMode = DEFAULT_PRESENTATION_MODE;
   private _recentLimit: number = DEFAULT_RECENT_LIMIT;
   private _dangerouslySkip: boolean = false;
   private _displayNames: Map<string, string> = new Map();
