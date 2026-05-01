@@ -215,6 +215,21 @@ def _fallback_from_jsonl(project_dir: Path) -> dict | None:
     }
 
 
+def _encode_path(path: str) -> str:
+    """Mirror Claude's encoding: replace ``/``, ``_`` and ``.`` with ``-``.
+
+    Used as a tiebreaker when two project dirs resolve to the same cwd:
+    the canonical row is the one whose encoded folder name matches.
+    """
+    out = []
+    for ch in path:
+        if ch in ("/", "_", "."):
+            out.append("-")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def _decode_dirname(name: str) -> str:
     """Best-effort decode of ``-home-lab-foo`` -> ``/home/lab/foo``.
 
@@ -305,8 +320,29 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
     for r in rows:
         r.pop("_name_source", None)
 
-    rows.sort(key=lambda r: r["file_mtime"], reverse=True)
-    return rows
+    # Deduplicate by project_path: two encoded folders can resolve to the
+    # same cwd (e.g. a session was started in /home/lab but stored under a
+    # different project dir because of how claude was invoked). Prefer the
+    # row whose encoded_path matches the canonical encoding of project_path;
+    # otherwise fall back to the highest file_mtime.
+    by_path: dict[str, dict] = {}
+    for r in rows:
+        path = r["project_path"]
+        prev = by_path.get(path)
+        if prev is None:
+            by_path[path] = r
+            continue
+        canonical = _encode_path(path)
+        r_canonical = r["encoded_path"] == canonical
+        prev_canonical = prev["encoded_path"] == canonical
+        if r_canonical and not prev_canonical:
+            by_path[path] = r
+        elif r_canonical == prev_canonical and r["file_mtime"] > prev["file_mtime"]:
+            by_path[path] = r
+
+    deduped = list(by_path.values())
+    deduped.sort(key=lambda r: r["file_mtime"], reverse=True)
+    return deduped
 
 
 def toggle_favourite(claude_root: Path, project_path: str, favourite: bool) -> list[str]:

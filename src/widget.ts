@@ -649,7 +649,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
         list.appendChild(empty);
       } else {
         for (const item of items) {
-          list.appendChild(this._renderRow(item));
+          list.appendChild(this._renderRow(item, key));
         }
       }
       section.appendChild(list);
@@ -658,7 +658,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._bodyEl.appendChild(section);
   }
 
-  private _renderRow(session: ISession): HTMLDivElement {
+  private _renderRow(session: ISession, sectionKey: SectionKey): HTMLDivElement {
     const row = document.createElement('div');
     row.className = 'jp-ClaudeSessionsPanel-row';
     row.title = this._buildRowTooltip(session);
@@ -689,7 +689,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
     name.textContent = this._lookupName(session);
     row.appendChild(name);
 
-    if (session.favourite) {
+    // No star in the Favourites section - every row there is a favourite
+    // by definition; stars are an indicator only useful in Recent/All.
+    if (session.favourite && sectionKey !== 'favourites') {
       const star = document.createElement('span');
       star.className = 'jp-ClaudeSessionsPanel-favStar';
       star.title = 'Favourite';
