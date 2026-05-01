@@ -669,7 +669,10 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._bodyEl.appendChild(section);
   }
 
-  private _renderRow(session: ISession, sectionKey: SectionKey): HTMLDivElement {
+  private _renderRow(
+    session: ISession,
+    sectionKey: SectionKey
+  ): HTMLDivElement {
     const row = document.createElement('div');
     row.className = 'jp-ClaudeSessionsPanel-row';
     row.title = this._buildRowTooltip(session);
