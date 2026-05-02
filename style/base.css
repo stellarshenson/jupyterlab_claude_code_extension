@@ -88,14 +88,6 @@
   min-height: 0;
 }
 
-.jp-ClaudeSessionsPanel-status {
-  flex: 0 0 auto;
-  padding: 4px 8px;
-  font-size: var(--jp-ui-font-size0);
-  color: var(--jp-warn-color1);
-  min-height: 14px;
-}
-
 .jp-ClaudeSessionsPanel-empty,
 .jp-ClaudeSessionsPanel-emptySection {
   padding: 8px 12px;

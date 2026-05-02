@@ -190,16 +190,11 @@ export class ClaudeCodeSessionsWidget extends Widget {
     const body = document.createElement('div');
     body.className = 'jp-ClaudeSessionsPanel-body';
 
-    const status = document.createElement('div');
-    status.className = 'jp-ClaudeSessionsPanel-status';
-
     root.appendChild(header);
     root.appendChild(search);
     root.appendChild(body);
-    root.appendChild(status);
 
     this._bodyEl = body;
-    this._statusEl = status;
   }
 
   /** Normalise strings for filter comparison: NFD-decompose, strip combining
@@ -289,12 +284,12 @@ export class ClaudeCodeSessionsWidget extends Widget {
   }
 
   private _showLoading(): void {
-    this._statusEl.textContent = this._sessions === null ? 'Loading...' : '';
+    // No visual indicator - the spinning refresh button conveys loading state.
   }
 
   private _showError(err: unknown): void {
     const message = err instanceof Error ? err.message : String(err);
-    this._statusEl.textContent = `Error: ${message}`;
+    console.error('[jupyterlab_claude_code_extension]', message);
   }
 
   // ------------------------------------------------------------------ data
@@ -305,7 +300,6 @@ export class ClaudeCodeSessionsWidget extends Widget {
       this._serverSettings
     );
     this._sessions = data.sessions ?? [];
-    this._statusEl.textContent = '';
     this._render();
   }
 
@@ -899,7 +893,6 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private readonly _app: JupyterFrontEnd;
   private readonly _serverSettings: ServerConnection.ISettings;
   private _bodyEl!: HTMLDivElement;
-  private _statusEl!: HTMLDivElement;
   private _refreshBtn: HTMLButtonElement | null = null;
   private _sessions: ISession[] | null = null;
   private _expanded: Record<SectionKey, boolean> = loadExpanded();
