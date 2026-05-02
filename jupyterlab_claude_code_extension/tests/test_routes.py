@@ -68,6 +68,12 @@ def fake_claude(tmp_path: Path) -> Path:
             },
         ],
     }))
+    # The resolver picks the latest by fs mtime, so set them explicitly:
+    # bbbb-new must be more recent than bbbb-old.
+    (b / "bbbb-old.jsonl").write_text("{}\n")
+    os.utime(b / "bbbb-old.jsonl", (2_000, 2_000))
+    (b / "bbbb-new.jsonl").write_text("{}\n")
+    os.utime(b / "bbbb-new.jsonl", (3_000, 3_000))
 
     # Project C - no sessions-index.json, raw .jsonl fallback
     c = projects / "-home-user-projC"
