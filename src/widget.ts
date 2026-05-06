@@ -78,6 +78,7 @@ function saveExpanded(state: Record<SectionKey, boolean>): void {
 interface ITerminalCwdResponse {
   terminal_name: string;
   cwds: string[];
+  has_claude: boolean;
 }
 
 // Drop any pre-v0.6.18 localStorage entries from previous schemes - they
@@ -461,6 +462,12 @@ export class ClaudeCodeSessionsWidget extends Widget {
           `terminal-cwd/${encodeURIComponent(sessName)}`,
           this._serverSettings
         );
+        // Only reuse terminals that actually have claude running. Otherwise
+        // a plain bash opened at the project cwd would be matched and
+        // activated, swallowing the resume click without spawning claude.
+        if (!data?.has_claude) {
+          continue;
+        }
         const cwds = Array.isArray(data?.cwds) ? data.cwds : [];
         for (const cwd of cwds) {
           if ((cwd || '').replace(/\/+$/, '') === target) {

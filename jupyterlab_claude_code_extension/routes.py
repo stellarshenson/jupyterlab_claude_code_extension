@@ -56,6 +56,23 @@ def _process_pwd_env(pid: int) -> str | None:
     return None
 
 
+def _tree_has_claude(root_pid: int) -> bool:
+    """Return True iff any process in the pty's tree has ``comm == claude``.
+
+    Used to filter the reuse path: a JL terminal whose cwd matches a project
+    folder but doesn't actually have claude running in it (e.g. a plain
+    ``bash`` opened at the project) must NOT be reused - the panel should
+    spawn a new terminal with ``claude --resume`` instead.
+    """
+    queue: list[int] = [root_pid]
+    while queue:
+        pid = queue.pop(0)
+        if _process_comm(pid) == "claude":
+            return True
+        queue.extend(_process_children(pid))
+    return False
+
+
 def _terminal_cwds(root_pid: int) -> list[str]:
     """Walk the pty's process tree and return ALL distinct cwds found.
 
@@ -192,7 +209,12 @@ class TerminalCwdHandler(APIHandler):
             self.finish(json.dumps({"error": "terminal has no pty"}))
             return
         cwds = _terminal_cwds(ptyproc.pid)
-        self.finish(json.dumps({"terminal_name": terminal_name, "cwds": cwds}))
+        has_claude = _tree_has_claude(ptyproc.pid)
+        self.finish(json.dumps({
+            "terminal_name": terminal_name,
+            "cwds": cwds,
+            "has_claude": has_claude,
+        }))
 
 
 class LaunchClaudeTerminalHandler(APIHandler):
