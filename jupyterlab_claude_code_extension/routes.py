@@ -18,17 +18,24 @@ URL_PREFIX = "jupyterlab-claude-code-extension"
 _KNOWN_SHELLS = {"bash", "zsh", "fish", "sh", "dash", "ksh", "tcsh", "csh"}
 
 
-# bash one-liner that polls `stty size` until the WebSocket client has resized
-# the pty to a usable window (>=20x80), clears the screen, then `exec`s claude
-# with the real argv. The exec replaces bash so the pty's only process is
-# claude - auto-close on exit still works. 5s timeout means if no client ever
-# connects, we still launch rather than hanging the pty forever. Without this,
-# claude paints its TUI against the pty's tiny default size and the rendering
-# stays narrow.
+# bash one-liner that waits until the JL WebSocket client has resized the pty
+# from its initial default before clearing and `exec`ing the real argv. The
+# previous threshold-based version (rows>=20 && cols>=80) was a no-op because
+# terminado's default is 24x80, so `c=80 >= 80` passed on the first iteration
+# and we never actually waited.
+#
+# Strategy: capture the initial size, install a SIGWINCH trap, and loop until
+# either SIGWINCH fires OR the size has visibly changed. 5 s timeout fallback
+# so we still launch if no client ever connects. After exec, bash is replaced
+# by claude on the same pid - auto-close on exit and the `_tree_has_claude`
+# reuse filter still work.
 _INIT_WAITER = (
+    "trap 'CHANGED=1' WINCH; "
+    "read R0 C0 < <(stty size 2>/dev/null || echo '0 0'); "
     "for i in $(seq 1 50); do "
+    'if [ -n "$CHANGED" ]; then break; fi; '
     "read r c < <(stty size 2>/dev/null || echo '0 0'); "
-    'if [ "$r" -ge 20 ] && [ "$c" -ge 80 ]; then break; fi; '
+    'if [ "$r" != "$R0" ] || [ "$c" != "$C0" ]; then break; fi; '
     "sleep 0.1; "
     "done; "
     "clear; "
