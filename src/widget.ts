@@ -415,26 +415,35 @@ export class ClaudeCodeSessionsWidget extends Widget {
       // as the pty's only process (no shell). Server-side endpoint calls
       // terminal_manager.create(shell_command=[claude, --resume, sid], cwd=...)
       // and returns the terminal name; we then attach JL's standard widget
-      // via terminal:open. When claude exits, the tab closes.
-      const launched = await requestAPI<ILaunchTerminalResponse>(
-        'launch-terminal',
-        this._serverSettings,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            project_path: session.project_path,
-            session_id: session.session_id,
-            dangerously_skip_permissions:
-              forceDangerous || this._dangerouslySkip
-          })
-        }
+      // via terminal:open. When claude exits, the tab closes. The launch
+      // RPC + the WebSocket-resize waiter on the server can take a few
+      // seconds, so show a modal spinner for visual feedback.
+      const spinner = this._showLaunchSpinner(
+        `Opening ${this._lookupName(session)}...`
       );
-      const widget: any = await this._app.commands.execute('terminal:open', {
-        name: launched.terminal_name
-      });
-      if (widget?.id) {
-        this._terminalsByPath.set(session.project_path, widget);
-        this._wireTerminalDisposal(session.project_path, widget);
+      try {
+        const launched = await requestAPI<ILaunchTerminalResponse>(
+          'launch-terminal',
+          this._serverSettings,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              project_path: session.project_path,
+              session_id: session.session_id,
+              dangerously_skip_permissions:
+                forceDangerous || this._dangerouslySkip
+            })
+          }
+        );
+        const widget: any = await this._app.commands.execute('terminal:open', {
+          name: launched.terminal_name
+        });
+        if (widget?.id) {
+          this._terminalsByPath.set(session.project_path, widget);
+          this._wireTerminalDisposal(session.project_path, widget);
+        }
+      } finally {
+        spinner.resolve();
       }
     } catch (err) {
       this._showError(err);
@@ -491,6 +500,34 @@ export class ClaudeCodeSessionsWidget extends Widget {
         'click "Resume (Skip Permissions)" again.',
       buttons: [Dialog.okButton({ label: 'OK' })]
     });
+  }
+
+  /** Show a modal with a spinner while the terminal is being launched. The
+   * caller must dismiss it via ``.resolve()`` once the work is done.
+   */
+  private _showLaunchSpinner(label: string): Dialog<unknown> {
+    const body = new Widget();
+    body.node.className = 'jp-ClaudeSessionsPanel-launchOverlay';
+
+    const spinner = document.createElement('div');
+    spinner.className =
+      'jp-claude-sessions-panel-spinner jp-ClaudeSessionsPanel-launchSpinner';
+    body.node.appendChild(spinner);
+
+    const text = document.createElement('div');
+    text.className = 'jp-ClaudeSessionsPanel-launchLabel';
+    text.textContent = label;
+    body.node.appendChild(text);
+
+    const dialog = new Dialog<unknown>({
+      title: 'Opening Claude Code session',
+      body,
+      buttons: [Dialog.cancelButton({ label: 'Run in background' })]
+    });
+    // launch() returns a Promise we don't await - we resolve programmatically
+    // when the spawn completes (or errors).
+    void dialog.launch();
+    return dialog;
   }
 
   private _wireTerminalDisposal(projectPath: string, widget: any): void {
