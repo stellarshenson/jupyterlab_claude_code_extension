@@ -18,6 +18,30 @@ URL_PREFIX = "jupyterlab-claude-code-extension"
 _KNOWN_SHELLS = {"bash", "zsh", "fish", "sh", "dash", "ksh", "tcsh", "csh"}
 
 
+# bash one-liner that polls `stty size` until the WebSocket client has resized
+# the pty to a usable window (>=20x80), clears the screen, then `exec`s claude
+# with the real argv. The exec replaces bash so the pty's only process is
+# claude - auto-close on exit still works. 5s timeout means if no client ever
+# connects, we still launch rather than hanging the pty forever. Without this,
+# claude paints its TUI against the pty's tiny default size and the rendering
+# stays narrow.
+_INIT_WAITER = (
+    "for i in $(seq 1 50); do "
+    "read r c < <(stty size 2>/dev/null || echo '0 0'); "
+    'if [ "$r" -ge 20 ] && [ "$c" -ge 80 ]; then break; fi; '
+    "sleep 0.1; "
+    "done; "
+    "clear; "
+    'exec "$@"'
+)
+
+
+def _wrap_with_init(argv: list[str]) -> list[str]:
+    """Prepend the terminal-init waiter so claude only starts once the JL
+    terminal widget has connected and sized the pty to a usable window."""
+    return ["/bin/bash", "-c", _INIT_WAITER, "claude-terminal-init", *argv]
+
+
 def _process_comm(pid: int) -> str | None:
     if sys.platform != "linux":
         return None
@@ -223,7 +247,10 @@ class LaunchClaudeTerminalHandler(APIHandler):
     Bypasses ``terminal:create-new`` (which spawns the user's $SHELL) so the
     terminal tab shows claude immediately without any visible bash. Uses
     terminado's per-call ``shell_command`` option through
-    ``jupyter_server_terminals``' ``TerminalManager.create``.
+    ``jupyter_server_terminals``' ``TerminalManager.create``. A short bash
+    waiter (``_INIT_WAITER``) ``exec``s into claude only after the WebSocket
+    client has resized the pty to a usable window, so the TUI sees a real
+    terminal size at launch instead of the pty's tiny default.
     """
 
     @tornado.web.authenticated
@@ -259,7 +286,7 @@ class LaunchClaudeTerminalHandler(APIHandler):
         if dangerously_skip:
             argv.append("--dangerously-skip-permissions")
         model = terminal_manager.create(
-            shell_command=argv,
+            shell_command=_wrap_with_init(argv),
             cwd=project_path,
         )
         # ``model`` from jupyter_server_terminals is dict-like with at
