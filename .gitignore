@@ -129,3 +129,4 @@ dmypy.json
 
 # pytest artefacts
 junit.xml
+.article_writer/
