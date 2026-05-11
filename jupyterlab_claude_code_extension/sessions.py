@@ -289,9 +289,16 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
     """Return one row per project folder, deduplicated to the most recent JSONL.
 
     Each row carries: ``project_path``, ``encoded_path``, ``session_id``,
-    ``name``, ``summary``, ``first_prompt``, ``message_count``, ``created``,
-    ``modified``, ``file_mtime``, ``git_branch``, ``remote_control``,
-    ``favourite``.
+    ``name``, ``name_source``, ``summary``, ``first_prompt``, ``message_count``,
+    ``created``, ``modified``, ``file_mtime``, ``git_branch``,
+    ``remote_control``, ``favourite``.
+
+    ``name_source`` is ``"rename"`` when the name came from an explicit
+    ``/rename`` in Claude (via ``~/.claude/sessions/<pid>.json``), or
+    ``"basename"`` when it fell back to the project folder name. The frontend
+    uses this to keep user-set rename names intact during display-name
+    disambiguation (which otherwise rolls colliding names back to path tails
+    and masks the rename).
     """
     root = claude_root if claude_root is not None else claude_dir()
     projects_dir = root / PROJECTS_DIRNAME
@@ -348,14 +355,8 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
             "git_branch": latest.get("gitBranch"),
             "remote_control": state.get("live_pid") is not None,
             "favourite": project_path in favourites,
-            "_name_source": name_source,
+            "name_source": name_source,
         })
-
-    # Disambiguation is left to the frontend - it has access to the user's
-    # settings (whether to resolve names at all) and can render path-segment
-    # suffixes more flexibly than a fixed basename style.
-    for r in rows:
-        r.pop("_name_source", None)
 
     # Deduplicate by project_path: two encoded folders can resolve to the
     # same cwd (e.g. a session was started in /home/lab but stored under a

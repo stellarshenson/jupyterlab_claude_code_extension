@@ -197,6 +197,27 @@ def test_backend_returns_bare_names(fake_claude: Path) -> None:
     assert rows["/home/user/projB"]["name"] == "shared"
 
 
+def test_name_source_is_rename_when_pid_file_carries_name(
+    fake_claude: Path,
+) -> None:
+    """When a pid.json file supplies the row's name via a stable /rename,
+    the row carries ``name_source == 'rename'`` so the frontend can keep
+    that label intact during display-name disambiguation."""
+    sessions_dir = fake_claude / "sessions"
+    sessions_dir.mkdir()
+    (sessions_dir / "100.json").write_text(json.dumps({
+        "pid": 100, "sessionId": "a", "cwd": "/home/user/projA",
+        "updatedAt": 1, "name": "court-cases",
+    }))
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/projA"]["name"] == "court-cases"
+    assert rows["/home/user/projA"]["name_source"] == "rename"
+    # Project B and C have no pid.json with a /rename - they fall back to
+    # the folder basename and should be marked as basename-sourced.
+    assert rows["/home/user/projB"]["name_source"] == "basename"
+    assert rows["/home/user/projC"]["name_source"] == "basename"
+
+
 def test_auto_name_detected_and_dropped(fake_claude: Path) -> None:
     """Two pid files for the same sessionId with different ``name`` values
     should be treated as auto-derived (volatile) and ``state.name`` dropped

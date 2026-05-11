@@ -566,7 +566,14 @@ export class ClaudeCodeSessionsWidget extends Widget {
     return parts[parts.length - 1] || '';
   }
 
-  /** Walk path tails until every name in a colliding group is unique. */
+  /** Walk path tails until every name in a colliding group is unique.
+   *
+   * User-set rename names (``name_source === 'rename'``) survive
+   * disambiguation untouched: a Claude ``/rename`` should never be rolled
+   * back to a path tail just because some other row happens to share its
+   * folder basename. Basename-derived rows in the same group get the path
+   * tail suffix, picked so it stays distinct from every rename label too.
+   */
   private _disambiguate(rows: ISession[]): Map<string, string> {
     const out = new Map<string, string>();
     const groups = new Map<string, ISession[]>();
@@ -579,20 +586,43 @@ export class ClaudeCodeSessionsWidget extends Widget {
         out.set(group[0].project_path, name);
         continue;
       }
-      const segs = group.map(r => r.project_path.split('/').filter(Boolean));
+
+      const renames = group.filter(r => r.name_source === 'rename');
+      const basenames = group.filter(r => r.name_source !== 'rename');
+
+      // Rename rows win unchanged. The ``taken`` set guards basename
+      // disambiguation from colliding back into a rename's label.
+      const taken = new Set<string>();
+      for (const r of renames) {
+        out.set(r.project_path, r.name);
+        taken.add(r.name);
+      }
+      if (basenames.length === 0) {
+        continue;
+      }
+
+      // Walk path tails for basename rows: tail must be unique among
+      // basenames AND not equal to any rename label already taken.
+      const segs = basenames.map(r =>
+        r.project_path.split('/').filter(Boolean)
+      );
       const max = Math.max(...segs.map(s => s.length));
       let depth = 1;
+      let resolved = false;
       while (depth <= max) {
         const tails = segs.map(s => s.slice(-depth).join('/'));
-        if (new Set(tails).size === tails.length) {
-          group.forEach((r, i) => out.set(r.project_path, tails[i]));
+        const unique = new Set(tails).size === tails.length;
+        const noConflict = tails.every(t => !taken.has(t));
+        if (unique && noConflict) {
+          basenames.forEach((r, i) => out.set(r.project_path, tails[i]));
+          resolved = true;
           break;
         }
         depth += 1;
       }
-      if (!out.has(group[0].project_path)) {
+      if (!resolved) {
         // Fallback to absolute path
-        group.forEach(r => out.set(r.project_path, r.project_path));
+        basenames.forEach(r => out.set(r.project_path, r.project_path));
       }
     }
     return out;

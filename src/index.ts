@@ -53,11 +53,20 @@ const plugin: JupyterFrontEndPlugin<void> = {
       status.root_dir || '',
       terminalTracker
     );
-    labShell.add(widget, 'left', { rank: 600 });
+
+    // Read the sidebar setting before docking so we add the widget to the
+    // user's preferred side on first paint. Default to left.
+    let currentSidebar: 'left' | 'right' = 'left';
 
     if (settingRegistry) {
       try {
         const settings = await settingRegistry.load(PLUGIN_ID);
+        const initialSidebar = settings.get('sidebar').composite as string;
+        if (initialSidebar === 'left' || initialSidebar === 'right') {
+          currentSidebar = initialSidebar;
+        }
+        labShell.add(widget, currentSidebar, { rank: 600 });
+
         const apply = (): void => {
           const mode = settings.get('presentationMode').composite as string;
           if (mode === 'session' || mode === 'folder' || mode === 'path') {
@@ -70,6 +79,16 @@ const plugin: JupyterFrontEndPlugin<void> = {
           const dangerous = settings.get('dangerouslySkipPermissions')
             .composite as boolean;
           widget.setDangerouslySkipPermissions(!!dangerous);
+          const sidebar = settings.get('sidebar').composite as string;
+          if (
+            (sidebar === 'left' || sidebar === 'right') &&
+            sidebar !== currentSidebar
+          ) {
+            currentSidebar = sidebar;
+            // Lumino re-parents the widget cleanly when add() is called
+            // against a different area.
+            labShell.add(widget, sidebar, { rank: 600 });
+          }
         };
         apply();
         settings.changed.connect(apply);
@@ -78,7 +97,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
           '[jupyterlab_claude_code_extension] failed to load settings; using defaults',
           err
         );
+        labShell.add(widget, currentSidebar, { rank: 600 });
       }
+    } else {
+      labShell.add(widget, currentSidebar, { rank: 600 });
     }
 
     // Register with the layout restorer so JL remembers whether the panel

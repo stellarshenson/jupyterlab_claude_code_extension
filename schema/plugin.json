@@ -25,6 +25,13 @@
       "title": "Dangerously skip permissions",
       "description": "When enabled, newly spawned and resumed sessions are launched with `--dangerously-skip-permissions`. Bypasses every Claude Code permission prompt - only enable in sandboxes you trust.",
       "default": false
+    },
+    "sidebar": {
+      "type": "string",
+      "title": "Sidebar position",
+      "description": "Which JupyterLab sidebar to dock the panel to. `left` (default) keeps it next to the file browser. `right` puts it opposite. Takes effect on the next JupyterLab reload.",
+      "enum": ["left", "right"],
+      "default": "left"
     }
   },
   "additionalProperties": false
