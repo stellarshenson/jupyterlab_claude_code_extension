@@ -1,0 +1,168 @@
+<!--
+  02-the-wish.svg - "What I actually wanted"
+  Shows: tidy left-column project list (7 rows, 2 with green live-dots, 1 with star),
+         right-side 2x2 wish-badge grid (eye, dot, hand, shield), title and bottom caption.
+  Intent: calm contrast to image 01 - ordered, generous whitespace, one click away.
+  Theme: Stellars-Tech dark - cyan accents, orange star, live-green dots.
+-->
+<!-- === GRID ===
+  viewBox: 1200 x 675 (16:9)
+  Outer margin: 40
+  Title:        y = 76 (centred, fg-1 32px)
+  Caption:      y = 635 (centred, fg-3 15px)
+
+  LEFT PANEL (project list):
+    x = 80..540, w = 460
+    Row height 46, gap 10. Rows at y = 140, 196, 252, 308, 364, 420, 476
+    Pill: full row rounded rect, fill #0096d1 @ 0.06, stroke 0.55
+    Row content: text x=104 baseline y=row+29; live-dot cx=row.right-22 cy=row.mid r=5;
+                 star icon x=row.right-26 y=row.mid-7 (24x24 area)
+
+  RIGHT PANEL (2x2 badges):
+    Column1 x=640..900 (w=260), Column2 x=920..1180 (w=260)
+    Row1 y=140..320 (h=180), Row2 y=360..540 (h=180)
+    Inside each: circle cx=col.mid cy=row.top+58 r=34 + label at y=row.top+128, 16px fg-1 bold
+    Sublabel at y=row.top+150, 11px fg-3
+=== -->
+<!-- === LAYOUT TOPOLOGY ===
+  contain: canvas > title, panel-list, panel-badges, caption
+  v-stack: row-1..row-7 inside panel-list (gap=10, equal width)
+  h-stack + v-stack: 2x2 inside panel-badges
+  mirror: left-half (list) ~ right-half (badges) - dual visual rhetoric
+=== -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid meet">
+  <style>
+    .fg-1 { fill: #1a5a6e; }
+    .fg-2 { fill: #24697e; }
+    .fg-3 { fill: #236a74; }
+    .fg-4 { fill: #2b7680; }
+    .accent-1 { fill: #005f7a; }
+    .accent-2 { fill: #7a4a15; }
+    .row-fill { fill: #0096d1; fill-opacity: 0.06; }
+    .row-stroke { stroke: #0096d1; stroke-width: 1; fill: none; opacity: 0.5; }
+    .row-name { fill: #1a5a6e; }
+    .badge-fill { fill: #0096d1; fill-opacity: 0.06; }
+    .badge-stroke { stroke: #0096d1; stroke-width: 1; fill: none; opacity: 0.55; }
+    .badge-label { fill: #1a5a6e; }
+    .badge-sub { fill: #236a74; }
+    .badge-icon { stroke: #005f7a; }
+    .live-dot { fill: #4ac96f; }
+    .live-ring { fill: #4ac96f; opacity: 0.25; }
+    .star { fill: #da8230; opacity: 0.9; }
+    @media (prefers-color-scheme: dark) {
+      .fg-1 { fill: #b8e4f0; }
+      .fg-2 { fill: #8fd4e6; }
+      .fg-3 { fill: #5aafc5; }
+      .fg-4 { fill: #4099b3; }
+      .accent-1 { fill: #5cc8e0; }
+      .accent-2 { fill: #d4a04a; }
+      .row-fill { fill: #5cc8e0; fill-opacity: 0.08; }
+      .row-stroke { stroke: #5cc8e0; stroke-width: 1; fill: none; opacity: 0.55; }
+      .row-name { fill: #b8e4f0; }
+      .badge-fill { fill: #5cc8e0; fill-opacity: 0.08; }
+      .badge-stroke { stroke: #5cc8e0; stroke-width: 1; fill: none; opacity: 0.55; }
+      .badge-label { fill: #b8e4f0; }
+      .badge-sub { fill: #8fd4e6; }
+      .badge-icon { stroke: #5cc8e0; }
+      .live-dot { fill: #4ac96f; }
+      .live-ring { fill: #4ac96f; opacity: 0.30; }
+      .star { fill: #d4a04a; opacity: 0.95; }
+    }
+  </style>
+
+  <g id="nodes">
+    <g id="panel-list">
+      <g id="card-row-1" class="card">
+        <rect x="80" y="140" width="460" height="46" rx="6" class="row-fill"/>
+        <rect x="80" y="140" width="460" height="46" rx="6" class="row-stroke"/>
+        <text x="104" y="170" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="600">vms-anomaly-detection</text>
+        <circle cx="510" cy="163" r="9" class="live-ring"/>
+        <circle cx="510" cy="163" r="5" class="live-dot"/>
+      </g>
+      <g id="card-row-2" class="card">
+        <rect x="80" y="196" width="460" height="46" rx="6" class="row-fill"/>
+        <rect x="80" y="196" width="460" height="46" rx="6" class="row-stroke"/>
+        <text x="104" y="226" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="600">homeobjects-yolo</text>
+        <g transform="translate(498, 211)">
+          <path d="M11,0 L13.5,7.5 L22,7.5 L15,12.5 L17.5,20 L11,15.5 L4.5,20 L7,12.5 L0,7.5 L8.5,7.5 Z" class="star"/>
+        </g>
+      </g>
+      <g id="card-row-3" class="card">
+        <rect x="80" y="252" width="460" height="46" rx="6" class="row-fill"/>
+        <rect x="80" y="252" width="460" height="46" rx="6" class="row-stroke"/>
+        <text x="104" y="282" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="600">blog-static-site</text>
+      </g>
+      <g id="card-row-4" class="card">
+        <rect x="80" y="308" width="460" height="46" rx="6" class="row-fill"/>
+        <rect x="80" y="308" width="460" height="46" rx="6" class="row-stroke"/>
+        <text x="104" y="338" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="600">kolomolo-platform-engine</text>
+        <circle cx="510" cy="331" r="9" class="live-ring"/>
+        <circle cx="510" cy="331" r="5" class="live-dot"/>
+      </g>
+      <g id="card-row-5" class="card">
+        <rect x="80" y="364" width="460" height="46" rx="6" class="row-fill"/>
+        <rect x="80" y="364" width="460" height="46" rx="6" class="row-stroke"/>
+        <text x="104" y="394" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="600">stellars-nas-config</text>
+      </g>
+      <g id="card-row-6" class="card">
+        <rect x="80" y="420" width="460" height="46" rx="6" class="row-fill"/>
+        <rect x="80" y="420" width="460" height="46" rx="6" class="row-stroke"/>
+        <text x="104" y="450" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="600">sensor-fft-features</text>
+      </g>
+      <g id="card-row-7" class="card">
+        <rect x="80" y="476" width="460" height="46" rx="6" class="row-fill"/>
+        <rect x="80" y="476" width="460" height="46" rx="6" class="row-stroke"/>
+        <text x="104" y="506" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="600">stellars-skills-repo</text>
+      </g>
+    </g>
+
+    <g id="panel-badges">
+      <g id="card-badge-eye" class="card">
+        <rect x="640" y="140" width="260" height="180" rx="10" class="badge-fill"/>
+        <rect x="640" y="140" width="260" height="180" rx="10" class="badge-stroke"/>
+        <circle cx="770" cy="200" r="34" fill="#0096d1" fill-opacity="0.10"/>
+        <g transform="translate(746 176) scale(2)" fill="none" class="badge-icon" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6">
+          <!-- Icon: eye (Lucide, ISC license) -->
+          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </g>
+        <text x="770" y="278" class="badge-label" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700" text-anchor="middle">See every project</text>
+      </g>
+      <g id="card-badge-live" class="card">
+        <rect x="920" y="140" width="260" height="180" rx="10" class="badge-fill"/>
+        <rect x="920" y="140" width="260" height="180" rx="10" class="badge-stroke"/>
+        <circle cx="1050" cy="200" r="34" fill="#4ac96f" fill-opacity="0.14"/>
+        <circle cx="1050" cy="200" r="22" fill="#4ac96f" fill-opacity="0.30"/>
+        <circle cx="1050" cy="200" r="11" class="live-dot"/>
+        <text x="1050" y="278" class="badge-label" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700" text-anchor="middle">Live indicator</text>
+      </g>
+      <g id="card-badge-click" class="card">
+        <rect x="640" y="340" width="260" height="180" rx="10" class="badge-fill"/>
+        <rect x="640" y="340" width="260" height="180" rx="10" class="badge-stroke"/>
+        <circle cx="770" cy="400" r="34" fill="#0096d1" fill-opacity="0.10"/>
+        <g transform="translate(746 376) scale(2)" fill="none" class="badge-icon" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8">
+          <!-- Icon: mouse-pointer (Lucide, ISC license) - simplified cursor -->
+          <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>
+        </g>
+        <text x="770" y="478" class="badge-label" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700" text-anchor="middle">One click</text>
+      </g>
+      <g id="card-badge-shield" class="card">
+        <rect x="920" y="340" width="260" height="180" rx="10" class="badge-fill"/>
+        <rect x="920" y="340" width="260" height="180" rx="10" class="badge-stroke"/>
+        <circle cx="1050" cy="400" r="34" fill="#da8230" fill-opacity="0.14"/>
+        <g transform="translate(1026 376) scale(2)" fill="none" stroke="#7a4a15" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6">
+          <!-- Icon: shield-check (Lucide, ISC license) -->
+          <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+          <path d="m9 12 2 2 4-4"/>
+        </g>
+        <text x="1050" y="478" class="badge-label" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700" text-anchor="middle">Safe and fast modes</text>
+      </g>
+    </g>
+  </g>
+
+  <g id="content">
+    <text x="600" y="76" class="fg-1" font-family="Segoe UI, Arial, sans-serif" font-size="32" font-weight="700" text-anchor="middle">What I actually wanted</text>
+    <text x="600" y="575" class="fg-3" font-family="Segoe UI, Arial, sans-serif" font-size="15" text-anchor="middle">Calm, ordered, one click away.</text>
+  </g>
+
+</svg>

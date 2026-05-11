@@ -1,0 +1,247 @@
+<!--
+  03-the-panel.svg - "One panel, three sections"
+  Shows: stylised JupyterLab window frame; faded workspace placeholders; left sidebar panel
+         with header, filter input, and three accordion sections (Favourites, Recent, All).
+  Intent: introduce the panel visually - structure and navigation at a glance.
+  Theme: Stellars-Tech dark - cyan structure, orange star, live-green dots.
+-->
+<!-- === GRID ===
+  viewBox: 1200 x 675 (16:9)
+  Title (above frame): y = 50, fg-1 28px centred
+
+  JL window frame:
+    Outer x = 60..1140 (w=1080), y = 80..640 (h=560), radius 10
+    Title bar y = 80..110 (h=30) with traffic dots and "JupyterLab" label
+    Workspace area y = 110..640
+
+  Sidebar panel (left of workspace):
+    x = 80..420 (w=340), y = 120..620 (h=500)
+    Panel header strip y=120..158 (h=38): icon + "Claude Code Sessions" + refresh icon
+    Filter input strip y=166..198 (h=32) with placeholder text
+    Sections:
+      Favourites (expanded, 3 rows):  header y=210..234, rows y=240, 268, 296 (h=24)
+      Recent (expanded, 5 rows):      header y=332..356, rows y=362, 386, 410, 434, 458
+      All (collapsed):                header y=486..510
+
+  Faded workspace placeholders (right of sidebar):
+    File tree: x=440..580, y=130..610 (faded)
+    Notebook tabs+content: x=600..1130, y=130..610 (faded)
+=== -->
+<!-- === LAYOUT TOPOLOGY ===
+  contain: canvas > title, frame, sidebar, faded-workspace
+  contain: frame > titlebar, workspace
+  contain: sidebar > panel-header, filter, section-favourites, section-recent, section-all
+  v-stack: section-favourites, section-recent, section-all (gap=4)
+  mirror: rows inside each section share width and rhythm
+=== -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid meet">
+  <style>
+    .fg-1 { fill: #1a5a6e; }
+    .fg-2 { fill: #24697e; }
+    .fg-3 { fill: #236a74; }
+    .fg-4 { fill: #2b7680; }
+    .accent-1 { fill: #005f7a; }
+    .accent-2 { fill: #7a4a15; }
+    .frame-fill { fill: #0096d1; fill-opacity: 0.03; }
+    .frame-stroke { stroke: #0096d1; stroke-width: 1.2; fill: none; opacity: 0.55; }
+    .titlebar { fill: #0096d1; fill-opacity: 0.12; }
+    .titlebar-label { fill: #24697e; }
+    .traffic-dot { fill: #1a5a6e; opacity: 0.4; }
+    .faded-rect { fill: #0096d1; fill-opacity: 0.04; stroke: #0096d1; stroke-width: 0.8; opacity: 0.35; }
+    .faded-bar { fill: #0096d1; fill-opacity: 0.08; opacity: 0.35; }
+    .sidebar-fill { fill: #0096d1; fill-opacity: 0.05; }
+    .sidebar-stroke { stroke: #0096d1; stroke-width: 1; fill: none; opacity: 0.55; }
+    .panel-header-fill { fill: #0096d1; fill-opacity: 0.14; }
+    .panel-title { fill: #1a5a6e; }
+    .panel-icon { stroke: #005f7a; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+    .filter-fill { fill: #0096d1; fill-opacity: 0.04; }
+    .filter-stroke { stroke: #0096d1; stroke-width: 0.8; fill: none; opacity: 0.45; }
+    .filter-text { fill: #2b7680; font-style: italic; }
+    .section-header-fill { fill: #0096d1; fill-opacity: 0.10; }
+    .section-title { fill: #1a5a6e; }
+    .count-badge { fill: #0096d1; fill-opacity: 0.18; }
+    .count-text { fill: #1a5a6e; }
+    .chevron { stroke: #005f7a; fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+    .row-name { fill: #24697e; }
+    .live-dot { fill: #4ac96f; }
+    .star { fill: #da8230; opacity: 0.95; }
+    @media (prefers-color-scheme: dark) {
+      .fg-1 { fill: #b8e4f0; }
+      .fg-2 { fill: #8fd4e6; }
+      .fg-3 { fill: #5aafc5; }
+      .fg-4 { fill: #4099b3; }
+      .accent-1 { fill: #5cc8e0; }
+      .accent-2 { fill: #d4a04a; }
+      .frame-fill { fill: #5cc8e0; fill-opacity: 0.05; }
+      .frame-stroke { stroke: #5cc8e0; stroke-width: 1.2; fill: none; opacity: 0.55; }
+      .titlebar { fill: #5cc8e0; fill-opacity: 0.16; }
+      .titlebar-label { fill: #8fd4e6; }
+      .traffic-dot { fill: #5cc8e0; opacity: 0.55; }
+      .faded-rect { fill: #5cc8e0; fill-opacity: 0.06; stroke: #5cc8e0; stroke-width: 0.8; opacity: 0.4; }
+      .faded-bar { fill: #5cc8e0; fill-opacity: 0.12; opacity: 0.4; }
+      .sidebar-fill { fill: #5cc8e0; fill-opacity: 0.07; }
+      .sidebar-stroke { stroke: #5cc8e0; stroke-width: 1; fill: none; opacity: 0.55; }
+      .panel-header-fill { fill: #5cc8e0; fill-opacity: 0.18; }
+      .panel-title { fill: #b8e4f0; }
+      .panel-icon { stroke: #5cc8e0; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+      .filter-fill { fill: #5cc8e0; fill-opacity: 0.06; }
+      .filter-stroke { stroke: #5cc8e0; stroke-width: 0.8; fill: none; opacity: 0.5; }
+      .filter-text { fill: #4099b3; font-style: italic; }
+      .section-header-fill { fill: #5cc8e0; fill-opacity: 0.14; }
+      .section-title { fill: #b8e4f0; }
+      .count-badge { fill: #5cc8e0; fill-opacity: 0.24; }
+      .count-text { fill: #b8e4f0; }
+      .chevron { stroke: #5cc8e0; fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+      .row-name { fill: #8fd4e6; }
+      .live-dot { fill: #4ac96f; }
+      .star { fill: #d4a04a; opacity: 0.95; }
+    }
+  </style>
+
+  <g id="background"/>
+
+  <g id="header" class="header">
+    <text x="600" y="50" class="fg-1" font-family="Segoe UI, Arial, sans-serif" font-size="28" font-weight="700" text-anchor="middle">One panel, three sections</text>
+  </g>
+
+  <g id="nodes">
+    <g id="frame">
+      <rect x="60" y="80" width="1080" height="560" rx="10" class="frame-fill"/>
+      <rect x="60" y="80" width="1080" height="560" rx="10" class="frame-stroke"/>
+      <rect x="60" y="80" width="1080" height="30" class="titlebar"/>
+      <circle cx="80" cy="95" r="4" class="traffic-dot"/>
+      <circle cx="94" cy="95" r="4" class="traffic-dot"/>
+      <circle cx="108" cy="95" r="4" class="traffic-dot"/>
+      <text x="600" y="99" class="titlebar-label" font-family="Segoe UI, Arial, sans-serif" font-size="11" text-anchor="middle">JupyterLab</text>
+    </g>
+
+    <g id="faded-workspace">
+      <rect x="440" y="130" width="140" height="480" rx="4" class="faded-rect"/>
+      <rect x="452" y="148" width="116" height="6" class="faded-bar"/>
+      <rect x="452" y="164" width="92" height="6" class="faded-bar"/>
+      <rect x="452" y="180" width="106" height="6" class="faded-bar"/>
+      <rect x="460" y="200" width="100" height="6" class="faded-bar"/>
+      <rect x="460" y="216" width="84" height="6" class="faded-bar"/>
+      <rect x="452" y="240" width="116" height="6" class="faded-bar"/>
+      <rect x="452" y="256" width="96" height="6" class="faded-bar"/>
+
+      <rect x="600" y="130" width="530" height="480" rx="4" class="faded-rect"/>
+      <rect x="618" y="148" width="80" height="14" rx="2" class="faded-bar"/>
+      <rect x="710" y="148" width="80" height="14" rx="2" class="faded-bar"/>
+      <rect x="618" y="180" width="494" height="6" class="faded-bar"/>
+      <rect x="618" y="196" width="450" height="6" class="faded-bar"/>
+      <rect x="618" y="212" width="380" height="6" class="faded-bar"/>
+      <rect x="618" y="232" width="494" height="60" rx="3" class="faded-bar"/>
+      <rect x="618" y="304" width="430" height="6" class="faded-bar"/>
+      <rect x="618" y="320" width="494" height="6" class="faded-bar"/>
+      <rect x="618" y="344" width="494" height="80" rx="3" class="faded-bar"/>
+      <rect x="618" y="438" width="410" height="6" class="faded-bar"/>
+      <rect x="618" y="454" width="494" height="6" class="faded-bar"/>
+      <rect x="618" y="470" width="370" height="6" class="faded-bar"/>
+    </g>
+
+    <g id="card-sidebar" class="card">
+      <rect x="80" y="120" width="340" height="500" rx="6" class="sidebar-fill"/>
+      <rect x="80" y="120" width="340" height="500" rx="6" class="sidebar-stroke"/>
+
+      <g id="panel-header">
+        <rect x="80" y="120" width="340" height="38" class="panel-header-fill"/>
+        <g transform="translate(96 130)" class="panel-icon">
+          <!-- Icon: terminal-square (Lucide, ISC license) -->
+          <rect x="2" y="2" width="20" height="20" rx="3"/>
+          <path d="m7 11 2-2-2-2"/>
+          <path d="M11 13h4"/>
+        </g>
+        <text x="128" y="145" class="panel-title" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="700">Claude Code Sessions</text>
+        <g transform="translate(388 130)" class="panel-icon">
+          <!-- Icon: refresh-cw (Lucide, ISC license) -->
+          <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+          <path d="M21 3v5h-5"/>
+          <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+          <path d="M3 21v-5h5"/>
+        </g>
+      </g>
+
+      <g id="filter">
+        <rect x="96" y="170" width="308" height="28" rx="14" class="filter-fill"/>
+        <rect x="96" y="170" width="308" height="28" rx="14" class="filter-stroke"/>
+        <g transform="translate(108 180)" class="panel-icon" opacity="0.7">
+          <!-- Icon: search (Lucide, ISC license) -->
+          <circle cx="6.5" cy="6.5" r="4.5"/>
+          <path d="m12 12-2.5-2.5"/>
+        </g>
+        <text x="132" y="189" class="filter-text" font-family="Segoe UI, Arial, sans-serif" font-size="12">Filter sessions...</text>
+      </g>
+
+      <g id="card-section-favourites" class="card">
+        <rect x="96" y="214" width="308" height="26" rx="4" class="section-header-fill"/>
+        <g transform="translate(106 222)" class="chevron">
+          <!-- chevron-down -->
+          <path d="m2 4 5 5 5-5"/>
+        </g>
+        <text x="128" y="231" class="section-title" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="700">Favourites</text>
+        <rect x="356" y="220" width="42" height="14" rx="7" class="count-badge"/>
+        <text x="377" y="230" class="count-text" font-family="Segoe UI, Arial, sans-serif" font-size="10" font-weight="600" text-anchor="middle">3</text>
+
+        <g transform="translate(96 244)">
+          <text x="36" y="14" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="12">homeobjects-yolo</text>
+          <g transform="translate(282 4)">
+            <path d="M11,0 L13.5,7.5 L22,7.5 L15,12.5 L17.5,20 L11,15.5 L4.5,20 L7,12.5 L0,7.5 L8.5,7.5 Z" transform="scale(0.55)" class="star"/>
+          </g>
+        </g>
+        <g transform="translate(96 264)">
+          <text x="36" y="14" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="12">kolomolo-platform-engine</text>
+          <g transform="translate(282 4)">
+            <path d="M11,0 L13.5,7.5 L22,7.5 L15,12.5 L17.5,20 L11,15.5 L4.5,20 L7,12.5 L0,7.5 L8.5,7.5 Z" transform="scale(0.55)" class="star"/>
+          </g>
+        </g>
+        <g transform="translate(96 284)">
+          <text x="36" y="14" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="12">stellars-skills-repo</text>
+          <g transform="translate(282 4)">
+            <path d="M11,0 L13.5,7.5 L22,7.5 L15,12.5 L17.5,20 L11,15.5 L4.5,20 L7,12.5 L0,7.5 L8.5,7.5 Z" transform="scale(0.55)" class="star" opacity="0.4"/>
+          </g>
+        </g>
+      </g>
+
+      <g id="card-section-recent" class="card">
+        <rect x="96" y="320" width="308" height="26" rx="4" class="section-header-fill"/>
+        <g transform="translate(106 328)" class="chevron">
+          <path d="m2 4 5 5 5-5"/>
+        </g>
+        <text x="128" y="337" class="section-title" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="700">Recent</text>
+        <rect x="356" y="326" width="42" height="14" rx="7" class="count-badge"/>
+        <text x="377" y="336" class="count-text" font-family="Segoe UI, Arial, sans-serif" font-size="10" font-weight="600" text-anchor="middle">5</text>
+
+        <g transform="translate(96 350)">
+          <circle cx="22" cy="10" r="4" class="live-dot"/>
+          <text x="36" y="14" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="12">vms-anomaly-detection</text>
+        </g>
+        <g transform="translate(96 370)">
+          <text x="36" y="14" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="12">sensor-fft-features</text>
+        </g>
+        <g transform="translate(96 390)">
+          <circle cx="22" cy="10" r="4" class="live-dot"/>
+          <text x="36" y="14" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="12">kolomolo-platform-engine</text>
+        </g>
+        <g transform="translate(96 410)">
+          <text x="36" y="14" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="12">blog-static-site</text>
+        </g>
+        <g transform="translate(96 430)">
+          <text x="36" y="14" class="row-name" font-family="Segoe UI, Arial, sans-serif" font-size="12">stellars-nas-config</text>
+        </g>
+      </g>
+
+      <g id="card-section-all" class="card">
+        <rect x="96" y="460" width="308" height="26" rx="4" class="section-header-fill"/>
+        <g transform="translate(106 468)" class="chevron">
+          <!-- chevron-right -->
+          <path d="m4 2 5 5-5 5"/>
+        </g>
+        <text x="128" y="477" class="section-title" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="700">All</text>
+        <rect x="356" y="466" width="42" height="14" rx="7" class="count-badge"/>
+        <text x="377" y="476" class="count-text" font-family="Segoe UI, Arial, sans-serif" font-size="10" font-weight="600" text-anchor="middle">24</text>
+      </g>
+    </g>
+  </g>
+
+</svg>

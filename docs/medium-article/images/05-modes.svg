@@ -1,0 +1,197 @@
+<!--
+  05-modes.svg - "Safe mode and bypass mode"
+  Shows: two side-by-side cards comparing Safe mode (cyan, shield-check) and Bypass mode
+         (orange, shield+zap), each with two bullets and a faux terminal snippet.
+         A small horizontal ribbon between cards reads "one right-click away".
+  Intent: A/B comparison of the two launch modes from the article.
+  Theme: Stellars-Tech dark - cyan left, orange right, matched layout.
+-->
+<!-- === GRID ===
+  viewBox: 1200 x 675 (16:9)
+  Outer margin: 40
+  Title:        y = 60 centred fg-1 30px
+  Caption:      y = 635 centred fg-3 14px
+
+  LEFT CARD (Safe):   x = 80..570, w = 490, y = 130..560, h = 430
+  RIGHT CARD (Bypass): x = 630..1120, w = 490, y = 130..560, h = 430
+
+  Card internal rhythm (relative to card top y0 = 130):
+    Accent bar     y0..(y0+6)
+    Icon circle    cy = y0+82, cx = card.left+82, r = 36 (matched on both cards)
+    Header text    y = y0+110  font 22 bold (card-coloured)
+    Bullet 1 row   y = y0+170: bullet dot at left + text
+    Bullet 2 row   y = y0+200
+    Terminal box   y = y0+240..y0+390 (h=150), w = card.w - 64, x = card.left + 32
+
+  RIBBON (centred between cards, narrow horizontal band):
+    Anchor at midline cx=600, cy=345 (card vertical midpoint).
+    Pill: w=200 h=44, x=500..700, y=323..367
+=== -->
+<!-- === LAYOUT TOPOLOGY ===
+  contain: canvas > title, card-safe, card-bypass, ribbon, caption
+  h-stack: card-safe, ribbon, card-bypass (gap=20 each side of ribbon)
+  mirror: card-safe ~ card-bypass (different accent colour, same internal rhythm)
+=== -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid meet">
+  <style>
+    .fg-1 { fill: #1a5a6e; }
+    .fg-2 { fill: #24697e; }
+    .fg-3 { fill: #236a74; }
+    .fg-4 { fill: #2b7680; }
+    .accent-1 { fill: #005f7a; }
+    .accent-2 { fill: #7a4a15; }
+    .card-cyan-fill { fill: #0096d1; fill-opacity: 0.05; }
+    .card-cyan-stroke { stroke: #0096d1; stroke-width: 1.2; fill: none; opacity: 0.6; }
+    .card-orange-fill { fill: #da8230; fill-opacity: 0.05; }
+    .card-orange-stroke { stroke: #da8230; stroke-width: 1.2; fill: none; opacity: 0.6; }
+    .accent-bar-cyan { fill: #0096d1; opacity: 0.6; }
+    .accent-bar-orange { fill: #da8230; opacity: 0.6; }
+    .icon-circle-cyan { fill: #0096d1; fill-opacity: 0.12; }
+    .icon-circle-orange { fill: #da8230; fill-opacity: 0.14; }
+    .icon-cyan { stroke: #005f7a; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .icon-orange { stroke: #7a4a15; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .header-cyan { fill: #005f7a; }
+    .header-orange { fill: #7a4a15; }
+    .bullet-text { fill: #1a5a6e; }
+    .bullet-dot-cyan { fill: #0096d1; }
+    .bullet-dot-orange { fill: #da8230; }
+    .term-cyan-fill { fill: #0096d1; fill-opacity: 0.10; }
+    .term-cyan-stroke { stroke: #0096d1; stroke-width: 1; fill: none; opacity: 0.55; }
+    .term-orange-fill { fill: #da8230; fill-opacity: 0.10; }
+    .term-orange-stroke { stroke: #da8230; stroke-width: 1; fill: none; opacity: 0.55; }
+    .term-bar-cyan { fill: #0096d1; fill-opacity: 0.22; }
+    .term-bar-orange { fill: #da8230; fill-opacity: 0.22; }
+    .term-mono { fill: #1a5a6e; }
+    .term-mono-dim { fill: #24697e; }
+    .traffic-dot { fill: #1a5a6e; opacity: 0.5; }
+    .ribbon-fill { fill: #0096d1; fill-opacity: 0.04; }
+    .ribbon-stroke { stroke: #0096d1; stroke-width: 1; fill: none; opacity: 0.45; }
+    .ribbon-text { fill: #24697e; font-style: italic; }
+    @media (prefers-color-scheme: dark) {
+      .fg-1 { fill: #b8e4f0; }
+      .fg-2 { fill: #8fd4e6; }
+      .fg-3 { fill: #5aafc5; }
+      .fg-4 { fill: #4099b3; }
+      .accent-1 { fill: #5cc8e0; }
+      .accent-2 { fill: #d4a04a; }
+      .card-cyan-fill { fill: #5cc8e0; fill-opacity: 0.08; }
+      .card-cyan-stroke { stroke: #5cc8e0; stroke-width: 1.2; fill: none; opacity: 0.65; }
+      .card-orange-fill { fill: #d4a04a; fill-opacity: 0.08; }
+      .card-orange-stroke { stroke: #d4a04a; stroke-width: 1.2; fill: none; opacity: 0.65; }
+      .accent-bar-cyan { fill: #5cc8e0; opacity: 0.7; }
+      .accent-bar-orange { fill: #d4a04a; opacity: 0.7; }
+      .icon-circle-cyan { fill: #5cc8e0; fill-opacity: 0.16; }
+      .icon-circle-orange { fill: #d4a04a; fill-opacity: 0.18; }
+      .icon-cyan { stroke: #5cc8e0; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .icon-orange { stroke: #d4a04a; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .header-cyan { fill: #5cc8e0; }
+      .header-orange { fill: #d4a04a; }
+      .bullet-text { fill: #b8e4f0; }
+      .bullet-dot-cyan { fill: #5cc8e0; }
+      .bullet-dot-orange { fill: #d4a04a; }
+      .term-cyan-fill { fill: #5cc8e0; fill-opacity: 0.14; }
+      .term-cyan-stroke { stroke: #5cc8e0; stroke-width: 1; fill: none; opacity: 0.6; }
+      .term-orange-fill { fill: #d4a04a; fill-opacity: 0.14; }
+      .term-orange-stroke { stroke: #d4a04a; stroke-width: 1; fill: none; opacity: 0.6; }
+      .term-bar-cyan { fill: #5cc8e0; fill-opacity: 0.30; }
+      .term-bar-orange { fill: #d4a04a; fill-opacity: 0.30; }
+      .term-mono { fill: #b8e4f0; }
+      .term-mono-dim { fill: #8fd4e6; }
+      .traffic-dot { fill: #5cc8e0; opacity: 0.6; }
+      .ribbon-fill { fill: #5cc8e0; fill-opacity: 0.06; }
+      .ribbon-stroke { stroke: #5cc8e0; stroke-width: 1; fill: none; opacity: 0.5; }
+      .ribbon-text { fill: #8fd4e6; font-style: italic; }
+    }
+  </style>
+
+  <g id="header" class="header">
+    <text x="600" y="62" class="fg-1" font-family="Segoe UI, Arial, sans-serif" font-size="30" font-weight="700" text-anchor="middle">Safe mode and bypass mode</text>
+  </g>
+
+  <g id="nodes">
+    <g id="card-safe" class="card">
+      <rect x="80" y="130" width="490" height="430" rx="10" class="card-cyan-fill"/>
+      <rect x="80" y="130" width="490" height="430" rx="10" class="card-cyan-stroke"/>
+      <rect x="80" y="130" width="490" height="6" class="accent-bar-cyan"/>
+
+      <circle cx="162" cy="212" r="36" class="icon-circle-cyan"/>
+      <g transform="translate(138 188) scale(2)" class="icon-cyan">
+        <!-- Icon: shield-check (Lucide, ISC license) -->
+        <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+        <path d="m9 12 2 2 4-4"/>
+      </g>
+
+      <text x="220" y="200" class="header-cyan" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">Safe mode</text>
+      <text x="220" y="226" class="bullet-text" font-family="Segoe UI, Arial, sans-serif" font-size="13" opacity="0.7">(default)</text>
+
+      <circle cx="118" cy="296" r="4" class="bullet-dot-cyan"/>
+      <text x="132" y="301" class="bullet-text" font-family="Segoe UI, Arial, sans-serif" font-size="15">Claude asks before risky tools</text>
+
+      <circle cx="118" cy="326" r="4" class="bullet-dot-cyan"/>
+      <text x="132" y="331" class="bullet-text" font-family="Segoe UI, Arial, sans-serif" font-size="15">Default for interactive work</text>
+
+      <g id="term-safe">
+        <rect x="112" y="380" width="426" height="150" rx="6" class="term-cyan-fill"/>
+        <rect x="112" y="380" width="426" height="150" rx="6" class="term-cyan-stroke"/>
+        <rect x="112" y="380" width="426" height="24" class="term-bar-cyan"/>
+        <circle cx="124" cy="392" r="3" class="traffic-dot"/>
+        <circle cx="136" cy="392" r="3" class="traffic-dot"/>
+        <circle cx="148" cy="392" r="3" class="traffic-dot"/>
+        <text x="130" y="436" class="term-mono-dim" font-family="Segoe UI, Arial, sans-serif" font-size="11">Claude wants to run:</text>
+        <text x="130" y="462" class="term-mono" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="600">rm -rf build/dist</text>
+        <text x="130" y="500" class="term-mono" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="600">Run this command? [Y/n]</text>
+        <rect x="338" y="490" width="9" height="14" class="term-bar-cyan"/>
+      </g>
+    </g>
+
+    <g id="card-bypass" class="card">
+      <rect x="630" y="130" width="490" height="430" rx="10" class="card-orange-fill"/>
+      <rect x="630" y="130" width="490" height="430" rx="10" class="card-orange-stroke"/>
+      <rect x="630" y="130" width="490" height="6" class="accent-bar-orange"/>
+
+      <circle cx="712" cy="212" r="36" class="icon-circle-orange"/>
+      <g transform="translate(688 188) scale(2)" class="icon-orange">
+        <!-- Icon: zap (Lucide, ISC license) - overlaid hint shape, plus shield underlay below -->
+        <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>
+      </g>
+
+      <text x="770" y="200" class="header-orange" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">Bypass mode</text>
+      <text x="770" y="226" class="bullet-text" font-family="Segoe UI, Arial, sans-serif" font-size="13" opacity="0.7">(skip permissions)</text>
+
+      <circle cx="668" cy="296" r="4" class="bullet-dot-orange"/>
+      <text x="682" y="301" class="bullet-text" font-family="Segoe UI, Arial, sans-serif" font-size="15">Skip permissions for automation</text>
+
+      <circle cx="668" cy="326" r="4" class="bullet-dot-orange"/>
+      <text x="682" y="331" class="bullet-text" font-family="Segoe UI, Arial, sans-serif" font-size="15">For long unattended sessions</text>
+
+      <g id="term-bypass">
+        <rect x="662" y="380" width="426" height="150" rx="6" class="term-orange-fill"/>
+        <rect x="662" y="380" width="426" height="150" rx="6" class="term-orange-stroke"/>
+        <rect x="662" y="380" width="426" height="24" class="term-bar-orange"/>
+        <circle cx="674" cy="392" r="3" class="traffic-dot"/>
+        <circle cx="686" cy="392" r="3" class="traffic-dot"/>
+        <circle cx="698" cy="392" r="3" class="traffic-dot"/>
+        <text x="680" y="436" class="term-mono-dim" font-family="Segoe UI, Arial, sans-serif" font-size="11">Starting session:</text>
+        <text x="680" y="466" class="term-mono" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">claude</text>
+        <text x="680" y="490" class="term-mono" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">--dangerously-skip-</text>
+        <text x="680" y="510" class="term-mono" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">permissions</text>
+      </g>
+    </g>
+
+    <g id="ribbon">
+      <!-- Small visual link sitting in the 60-px gap between the two cards. -->
+      <rect x="580" y="333" width="40" height="22" rx="11" class="ribbon-fill"/>
+      <rect x="580" y="333" width="40" height="22" rx="11" class="ribbon-stroke"/>
+      <g transform="translate(588 332)" fill="none" stroke="#005f7a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="icon-cyan">
+        <!-- Icon: link-2 (Lucide, ISC license) -->
+        <path d="M9 17H7A5 5 0 0 1 7 7h2"/>
+        <path d="M15 7h2a5 5 0 1 1 0 10h-2"/>
+        <line x1="8" y1="12" x2="16" y2="12"/>
+      </g>
+    </g>
+    <g id="bottom-caption">
+      <text x="600" y="600" class="ribbon-text" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="600" text-anchor="middle">one right-click away</text>
+    </g>
+  </g>
+
+</svg>

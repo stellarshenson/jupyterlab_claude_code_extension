@@ -1,0 +1,177 @@
+<!--
+  01-the-mess.svg - "The mess we were living with"
+  Shows: chaotic stack of rotated terminal tabs, each showing a deep cd path then claude continue,
+         scattered question marks, a wall clock with minute hand at 5, header + bottom caption.
+  Intent: convey overwhelm of navigating deep folder paths across many tabs (article opener).
+  Theme: Stellars-Tech dark - dim cyan tabs, muted secondary text for the long cd lines.
+-->
+<!-- === GRID ===
+  viewBox: 1200 x 675 (16:9)
+  Outer margin: 40
+  Title band:   y = 40..96   (centred, fg-1 28px)
+  Tab cluster:  x = 80..1120  y = 130..560 (controlled-chaos region)
+  Caption:      y = 615 (centred, fg-3 14px)
+
+  Tab dimensions: 320 x 130 (header bar 22, body 108)
+  Rotations (degrees) per tab (1..6): -7, +5, -3, +8, -5, +2
+  Tab centres (cx, cy) before rotation:
+    tab-1: (260, 230)
+    tab-2: (560, 200)
+    tab-3: (860, 245)
+    tab-4: (340, 410)
+    tab-5: (700, 430)
+    tab-6: (990, 400)
+
+  Question marks (3): (150, 340) size 110; (610, 560) size 88; (1060, 200) size 72
+  Clock (top-right corner): cx=1110, cy=130, r=52
+=== -->
+<!-- === LAYOUT TOPOLOGY ===
+  contain: canvas > header, tab-cluster, decor-question-marks, clock, caption
+  cluster: tab-1..tab-6 overlap intentionally; each rotated about its own centre
+  decor:   question-marks behind tab-cluster (low opacity)
+  mirror:  none (chaos)
+=== -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <!-- Slight hue variation per tab so the stack doesn't look uniform.
+         Values are small (+/- 4 to 30 deg) for subtle differentiation. -->
+    <filter id="hue-a" x="0" y="0" width="100%" height="100%"><feColorMatrix type="hueRotate" values="-12"/></filter>
+    <filter id="hue-b" x="0" y="0" width="100%" height="100%"><feColorMatrix type="hueRotate" values="8"/></filter>
+    <filter id="hue-c" x="0" y="0" width="100%" height="100%"><feColorMatrix type="hueRotate" values="-22"/></filter>
+    <filter id="hue-d" x="0" y="0" width="100%" height="100%"><feColorMatrix type="hueRotate" values="16"/></filter>
+    <filter id="hue-e" x="0" y="0" width="100%" height="100%"><feColorMatrix type="hueRotate" values="-28"/></filter>
+  </defs>
+  <style>
+    .fg-1 { fill: #1a5a6e; }
+    .fg-2 { fill: #24697e; }
+    .fg-3 { fill: #236a74; }
+    .fg-4 { fill: #2b7680; }
+    .accent-1 { fill: #005f7a; }
+    .accent-2 { fill: #7a4a15; }
+    .tab-fill { fill: #0096d1; fill-opacity: 0.06; }
+    .tab-stroke { stroke: #0096d1; stroke-width: 1.1; fill: none; opacity: 0.55; }
+    .tab-bar { fill: #0096d1; fill-opacity: 0.18; }
+    .tab-title { fill: #24697e; }
+    .tab-prompt { fill: #1a5a6e; }
+    .tab-uuid { fill: #2b7680; }
+    .qmark { fill: #1a5a6e; opacity: 0.10; }
+    .clock-ring { stroke: #1a5a6e; stroke-width: 1.4; fill: none; opacity: 0.55; }
+    .clock-tick { stroke: #1a5a6e; stroke-width: 1.2; opacity: 0.55; }
+    .clock-hand { stroke: #da8230; stroke-width: 2; opacity: 0.85; stroke-linecap: round; }
+    .clock-hub { fill: #da8230; opacity: 0.9; }
+    .dot { fill: #1a5a6e; opacity: 0.6; }
+    @media (prefers-color-scheme: dark) {
+      .fg-1 { fill: #b8e4f0; }
+      .fg-2 { fill: #8fd4e6; }
+      .fg-3 { fill: #5aafc5; }
+      .fg-4 { fill: #4099b3; }
+      .accent-1 { fill: #5cc8e0; }
+      .accent-2 { fill: #d4a04a; }
+      .tab-fill { fill: #5cc8e0; fill-opacity: 0.08; }
+      .tab-stroke { stroke: #5cc8e0; stroke-width: 1.1; fill: none; opacity: 0.55; }
+      .tab-bar { fill: #5cc8e0; fill-opacity: 0.22; }
+      .tab-title { fill: #8fd4e6; }
+      .tab-prompt { fill: #b8e4f0; }
+      .tab-uuid { fill: #4099b3; }
+      .qmark { fill: #5cc8e0; opacity: 0.10; }
+      .clock-ring { stroke: #5cc8e0; stroke-width: 1.4; fill: none; opacity: 0.55; }
+      .clock-tick { stroke: #5cc8e0; stroke-width: 1.2; opacity: 0.55; }
+      .clock-hand { stroke: #d4a04a; stroke-width: 2; opacity: 0.85; stroke-linecap: round; }
+      .clock-hub { fill: #d4a04a; opacity: 0.9; }
+      .dot { fill: #5cc8e0; opacity: 0.6; }
+    }
+  </style>
+
+  <g id="background">
+    <g id="decor-question-marks">
+      <text x="135" y="500" class="qmark" font-family="Segoe UI, Arial, sans-serif" font-size="220" font-weight="700" text-anchor="middle">?</text>
+      <text x="610" y="560" class="qmark" font-family="Segoe UI, Arial, sans-serif" font-size="200" font-weight="700" text-anchor="middle">?</text>
+      <text x="1090" y="555" class="qmark" font-family="Segoe UI, Arial, sans-serif" font-size="150" font-weight="700" text-anchor="middle">?</text>
+    </g>
+  </g>
+
+  <g id="nodes">
+    <g id="card-tab-1" class="card" transform="rotate(-7 260 230) translate(100 165)">
+      <path d="M0,0 H320 V124 Q320,130 314,130 H6 Q0,130 0,124 Z" class="tab-fill"/>
+      <path d="M0,0 H320 V124 Q320,130 314,130 H6 Q0,130 0,124 Z" class="tab-stroke"/>
+      <rect x="0" y="0" width="320" height="22" class="tab-bar"/>
+      <circle cx="12" cy="11" r="3" class="dot"/>
+      <circle cx="24" cy="11" r="3" class="dot"/>
+      <circle cx="36" cy="11" r="3" class="dot"/>
+      <text x="16" y="58" class="tab-uuid" font-family="Segoe UI, Arial, sans-serif" font-size="11">$ cd ~/projects/q2/sensor-anomaly-pipeline/v3/</text>
+      <text x="16" y="84" class="tab-prompt" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">$ claude --continue</text>
+    </g>
+
+    <g id="card-tab-2" class="card" transform="rotate(5 560 200) translate(400 135)" filter="url(#hue-a)">
+      <path d="M0,0 H320 V124 Q320,130 314,130 H6 Q0,130 0,124 Z" class="tab-fill"/>
+      <path d="M0,0 H320 V124 Q320,130 314,130 H6 Q0,130 0,124 Z" class="tab-stroke"/>
+      <rect x="0" y="0" width="320" height="22" class="tab-bar"/>
+      <circle cx="12" cy="11" r="3" class="dot"/>
+      <circle cx="24" cy="11" r="3" class="dot"/>
+      <circle cx="36" cy="11" r="3" class="dot"/>
+      <text x="16" y="58" class="tab-uuid" font-family="Segoe UI, Arial, sans-serif" font-size="11">$ cd ~/workspace/vms-anomaly-detection-fork/</text>
+      <text x="16" y="84" class="tab-prompt" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">$ claude --continue</text>
+    </g>
+
+    <g id="card-tab-3" class="card" transform="rotate(-3 860 245) translate(700 180)" filter="url(#hue-b)">
+      <path d="M0,0 H320 V124 Q320,130 314,130 H6 Q0,130 0,124 Z" class="tab-fill"/>
+      <path d="M0,0 H320 V124 Q320,130 314,130 H6 Q0,130 0,124 Z" class="tab-stroke"/>
+      <rect x="0" y="0" width="320" height="22" class="tab-bar"/>
+      <circle cx="12" cy="11" r="3" class="dot"/>
+      <circle cx="24" cy="11" r="3" class="dot"/>
+      <circle cx="36" cy="11" r="3" class="dot"/>
+      <text x="16" y="58" class="tab-uuid" font-family="Segoe UI, Arial, sans-serif" font-size="11">$ cd ~/customer-demos/actone-ai-hub-2026/</text>
+      <text x="16" y="84" class="tab-prompt" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">$ claude --continue</text>
+    </g>
+
+    <g id="card-tab-4" class="card" transform="rotate(8 340 410) translate(180 345)" filter="url(#hue-c)">
+      <path d="M0,0 H320 V124 Q320,130 314,130 H6 Q0,130 0,124 Z" class="tab-fill"/>
+      <path d="M0,0 H320 V124 Q320,130 314,130 H6 Q0,130 0,124 Z" class="tab-stroke"/>
+      <rect x="0" y="0" width="320" height="22" class="tab-bar"/>
+      <circle cx="12" cy="11" r="3" class="dot"/>
+      <circle cx="24" cy="11" r="3" class="dot"/>
+      <circle cx="36" cy="11" r="3" class="dot"/>
+      <text x="16" y="58" class="tab-uuid" font-family="Segoe UI, Arial, sans-serif" font-size="11">$ cd ../../../homeobjects-yolo/training/</text>
+      <text x="16" y="84" class="tab-prompt" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">$ claude --continue</text>
+    </g>
+
+    <g id="card-tab-5" class="card" transform="rotate(-5 700 430) translate(540 365)" filter="url(#hue-d)">
+      <path d="M0,0 H320 V124 Q320,130 314,130 H6 Q0,130 0,124 Z" class="tab-fill"/>
+      <path d="M0,0 H320 V124 Q320,130 314,130 H6 Q0,130 0,124 Z" class="tab-stroke"/>
+      <rect x="0" y="0" width="320" height="22" class="tab-bar"/>
+      <circle cx="12" cy="11" r="3" class="dot"/>
+      <circle cx="24" cy="11" r="3" class="dot"/>
+      <circle cx="36" cy="11" r="3" class="dot"/>
+      <text x="16" y="58" class="tab-uuid" font-family="Segoe UI, Arial, sans-serif" font-size="11">$ cd ~/jupyterlab/v3-final-final-actually/</text>
+      <text x="16" y="84" class="tab-prompt" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">$ claude --continue</text>
+    </g>
+
+    <g id="card-tab-6" class="card" transform="rotate(2 990 400) translate(830 335)" filter="url(#hue-e)">
+      <path d="M0,0 H320 V124 Q320,130 314,130 H6 Q0,130 0,124 Z" class="tab-fill"/>
+      <path d="M0,0 H320 V124 Q320,130 314,130 H6 Q0,130 0,124 Z" class="tab-stroke"/>
+      <rect x="0" y="0" width="320" height="22" class="tab-bar"/>
+      <circle cx="12" cy="11" r="3" class="dot"/>
+      <circle cx="24" cy="11" r="3" class="dot"/>
+      <circle cx="36" cy="11" r="3" class="dot"/>
+      <text x="16" y="58" class="tab-uuid" font-family="Segoe UI, Arial, sans-serif" font-size="11">$ cd ~/dev/blog-static-site/content/posts/</text>
+      <text x="16" y="84" class="tab-prompt" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">$ claude --continue</text>
+    </g>
+
+    <g id="clock" transform="translate(1110 130)">
+      <circle cx="0" cy="0" r="52" class="clock-ring"/>
+      <line x1="0" y1="-52" x2="0" y2="-44" class="clock-tick"/>
+      <line x1="52" y1="0" x2="44" y2="0" class="clock-tick"/>
+      <line x1="0" y1="52" x2="0" y2="44" class="clock-tick"/>
+      <line x1="-52" y1="0" x2="-44" y2="0" class="clock-tick"/>
+      <line x1="0" y1="0" x2="36" y2="-18" class="clock-hand"/>
+      <line x1="0" y1="0" x2="0" y2="-24" class="clock-hand"/>
+      <circle cx="0" cy="0" r="3" class="clock-hub"/>
+    </g>
+  </g>
+
+  <g id="content">
+    <text x="600" y="74" class="fg-1" font-family="Segoe UI, Arial, sans-serif" font-size="32" font-weight="700" text-anchor="middle">The mess we were living with</text>
+    <text x="600" y="635" class="fg-3" font-family="Segoe UI, Arial, sans-serif" font-size="15" text-anchor="middle">Tab-completing through deep folder paths, fifteen times a day.</text>
+  </g>
+
+</svg>

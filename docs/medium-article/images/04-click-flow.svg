@@ -1,0 +1,204 @@
+<!--
+  04-click-flow.svg - "Click once, land in the right terminal"
+  Shows: a sample session row at top, two branching paths.
+         Left (cyan) "Already open?" -> terminal tab coming forward with glow.
+         Right (orange) "Not open yet?" -> spinner modal then fresh terminal popping up.
+         A subtle reassurance note centred between paths.
+  Intent: explain the click decision in non-engineering language.
+  Theme: Stellars-Tech dark - cyan for refocus, orange for spawn.
+-->
+<!-- === GRID ===
+  viewBox: 1200 x 675 (16:9)
+  Outer margin: 40
+
+  Title: y = 50 centred fg-1 28px
+  Caption-mid: y = 540 centred fg-3 13px
+
+  ROOT (centred at top):
+    Row card: x=490..710 (w=220), y=170..222 (h=52). Slightly highlighted.
+    Cursor + label above: text "Click a session row" at y=140, label y=158
+    Cursor icon tip at (498, 175), body 18x28 inside the left edge of the row card,
+    east of the cyan connector's west exit (489, 196) to avoid overlap.
+
+  CONNECTORS (computed via svg-infographics connector, mode l-chamfer):
+    Flags (cyan):   src-rect=490,170,220,52  tgt-rect=150,330,400,260
+                    start-dir=W  end-dir=S  direction=forward  chamfer=8
+    Flags (orange): src-rect=490,170,220,52  tgt-rect=650,330,400,260
+                    start-dir=E  end-dir=S  direction=forward  chamfer=8
+    left:  M489,196 L358,196 L350,204 L350,317  (cyan), arrowhead (350,329)(360,317)(340,317)
+    right: M711,196 L842,196 L850,204 L850,317  (orange), arrowhead (850,329)(860,317)(840,317)
+    Exits through the west and east edges of the root card (y=196 midpoint) so the line
+    does NOT run along the south edge. Chamfer at the (358,196)/(350,204) and
+    (842,196)/(850,204) corners. Trimmed path (arrowhead clearance baked in, end at y=317
+    with the arrow polygon extending to y=329 just above the tgt-rect top y=330).
+
+  LEFT BRANCH CARD: x=150..550 (w=400), y=330..590 (h=260)
+    Title at y=365 "Already open?"
+    Inner illustration: terminal tab pulling forward, soft cyan glow
+    Bottom label "Tab comes back to focus"
+
+  RIGHT BRANCH CARD: x=650..1050 (w=400), y=330..590 (h=260)
+    Title at y=365 "Not open yet?"
+    Inner illustration: spinner ring on left half, terminal popup on right half
+    Bottom label "New terminal, Claude already running"
+
+  MID NOTE (between cards): y=620 centred fg-3 13px italic "No duplicate tabs. No bash flicker."
+=== -->
+<!-- === LAYOUT TOPOLOGY ===
+  contain: canvas > title, root, left-branch, right-branch, caption
+  v-flow:  root -> branches (decision splits left+right)
+  mirror:  left-branch ~ right-branch (different colour, equivalent layout)
+  connect: root -(L-chamfer cyan)-> left-branch
+  connect: root -(L-chamfer orange)-> right-branch
+=== -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" preserveAspectRatio="xMidYMid meet">
+  <style>
+    .fg-1 { fill: #1a5a6e; }
+    .fg-2 { fill: #24697e; }
+    .fg-3 { fill: #236a74; }
+    .fg-4 { fill: #2b7680; }
+    .accent-1 { fill: #005f7a; }
+    .accent-2 { fill: #7a4a15; }
+    .root-fill { fill: #0096d1; fill-opacity: 0.10; }
+    .root-stroke { stroke: #0096d1; stroke-width: 1.4; fill: none; opacity: 0.7; }
+    .root-text { fill: #1a5a6e; }
+    .cursor-stroke { stroke: #005f7a; fill: #0096d1; fill-opacity: 0.18; stroke-width: 1.6; stroke-linejoin: round; }
+    .branch-cyan-fill { fill: #0096d1; fill-opacity: 0.05; }
+    .branch-cyan-stroke { stroke: #0096d1; stroke-width: 1.2; fill: none; opacity: 0.6; }
+    .branch-orange-fill { fill: #da8230; fill-opacity: 0.05; }
+    .branch-orange-stroke { stroke: #da8230; stroke-width: 1.2; fill: none; opacity: 0.6; }
+    .conn-cyan { stroke: #0096d1; stroke-width: 2.5; fill: none; opacity: 0.7; stroke-linejoin: round; stroke-linecap: round; }
+    .conn-orange { stroke: #da8230; stroke-width: 2.5; fill: none; opacity: 0.7; stroke-linejoin: round; stroke-linecap: round; }
+    .arrow-cyan { fill: #0096d1; opacity: 0.85; }
+    .arrow-orange { fill: #da8230; opacity: 0.85; }
+    .branch-title-cyan { fill: #005f7a; }
+    .branch-title-orange { fill: #7a4a15; }
+    .branch-text { fill: #1a5a6e; }
+    .branch-sub { fill: #24697e; }
+    .term-glow-cyan { fill: #0096d1; fill-opacity: 0.18; }
+    .term-glow-orange { fill: #da8230; fill-opacity: 0.18; }
+    .term-fill { fill: #0096d1; fill-opacity: 0.12; }
+    .term-fill-orange { fill: #da8230; fill-opacity: 0.12; }
+    .term-stroke { stroke: #0096d1; stroke-width: 1.1; fill: none; opacity: 0.7; }
+    .term-stroke-orange { stroke: #da8230; stroke-width: 1.1; fill: none; opacity: 0.7; }
+    .term-bar { fill: #0096d1; fill-opacity: 0.28; }
+    .term-bar-orange { fill: #da8230; fill-opacity: 0.28; }
+    .term-mono { fill: #1a5a6e; }
+    .spinner-ring { stroke: #da8230; stroke-width: 4; fill: none; opacity: 0.4; }
+    .spinner-arc-circ { stroke: #da8230; stroke-width: 4; fill: none; opacity: 0.95; stroke-linecap: round; stroke-dasharray: 30 110; stroke-dashoffset: -8; }
+    .dot-small { fill: #1a5a6e; opacity: 0.5; }
+    @media (prefers-color-scheme: dark) {
+      .fg-1 { fill: #b8e4f0; }
+      .fg-2 { fill: #8fd4e6; }
+      .fg-3 { fill: #5aafc5; }
+      .fg-4 { fill: #4099b3; }
+      .accent-1 { fill: #5cc8e0; }
+      .accent-2 { fill: #d4a04a; }
+      .root-fill { fill: #5cc8e0; fill-opacity: 0.14; }
+      .root-stroke { stroke: #5cc8e0; stroke-width: 1.4; fill: none; opacity: 0.75; }
+      .root-text { fill: #b8e4f0; }
+      .cursor-stroke { stroke: #5cc8e0; fill: #5cc8e0; fill-opacity: 0.22; stroke-width: 1.6; stroke-linejoin: round; }
+      .branch-cyan-fill { fill: #5cc8e0; fill-opacity: 0.08; }
+      .branch-cyan-stroke { stroke: #5cc8e0; stroke-width: 1.2; fill: none; opacity: 0.65; }
+      .branch-orange-fill { fill: #d4a04a; fill-opacity: 0.08; }
+      .branch-orange-stroke { stroke: #d4a04a; stroke-width: 1.2; fill: none; opacity: 0.65; }
+      .conn-cyan { stroke: #5cc8e0; stroke-width: 2.5; fill: none; opacity: 0.75; stroke-linejoin: round; stroke-linecap: round; }
+      .conn-orange { stroke: #d4a04a; stroke-width: 2.5; fill: none; opacity: 0.75; stroke-linejoin: round; stroke-linecap: round; }
+      .arrow-cyan { fill: #5cc8e0; opacity: 0.9; }
+      .arrow-orange { fill: #d4a04a; opacity: 0.9; }
+      .branch-title-cyan { fill: #5cc8e0; }
+      .branch-title-orange { fill: #d4a04a; }
+      .branch-text { fill: #b8e4f0; }
+      .branch-sub { fill: #8fd4e6; }
+      .term-glow-cyan { fill: #5cc8e0; fill-opacity: 0.24; }
+      .term-glow-orange { fill: #d4a04a; fill-opacity: 0.24; }
+      .term-fill { fill: #5cc8e0; fill-opacity: 0.16; }
+      .term-fill-orange { fill: #d4a04a; fill-opacity: 0.16; }
+      .term-stroke { stroke: #5cc8e0; stroke-width: 1.1; fill: none; opacity: 0.75; }
+      .term-stroke-orange { stroke: #d4a04a; stroke-width: 1.1; fill: none; opacity: 0.75; }
+      .term-bar { fill: #5cc8e0; fill-opacity: 0.34; }
+      .term-bar-orange { fill: #d4a04a; fill-opacity: 0.34; }
+      .term-mono { fill: #b8e4f0; }
+      .spinner-ring { stroke: #d4a04a; stroke-width: 4; fill: none; opacity: 0.4; }
+      .spinner-arc-circ { stroke: #d4a04a; stroke-width: 4; fill: none; opacity: 0.95; stroke-linecap: round; stroke-dasharray: 30 110; stroke-dashoffset: -8; }
+      .dot-small { fill: #5cc8e0; opacity: 0.6; }
+    }
+  </style>
+
+  <g id="header" class="header">
+    <text x="600" y="50" class="fg-1" font-family="Segoe UI, Arial, sans-serif" font-size="28" font-weight="700" text-anchor="middle">Click once, land in the right terminal</text>
+  </g>
+
+  <g id="nodes">
+    <g id="card-root" class="card">
+      <text x="600" y="140" class="fg-3" font-family="Segoe UI, Arial, sans-serif" font-size="13" text-anchor="middle">Click a session row</text>
+      <g id="cursor" transform="translate(498 175)">
+        <polygon points="0,0 0,24 7,18 11,28 14,27 10,17 18,17" class="cursor-stroke"/>
+      </g>
+      <rect x="490" y="170" width="220" height="52" rx="6" class="root-fill"/>
+      <rect x="490" y="170" width="220" height="52" rx="6" class="root-stroke"/>
+      <text x="600" y="201" class="root-text" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="600" text-anchor="middle">vms-anomaly-detection</text>
+    </g>
+
+    <g id="card-branch-left" class="card">
+      <rect x="150" y="330" width="400" height="260" rx="10" class="branch-cyan-fill"/>
+      <rect x="150" y="330" width="400" height="260" rx="10" class="branch-cyan-stroke"/>
+      <rect x="150" y="330" width="400" height="5" rx="2.5" fill="#0096d1" opacity="0.6"/>
+      <text x="350" y="368" class="branch-title-cyan" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="700" text-anchor="middle">Already open?</text>
+
+      <g id="illus-refocus" transform="translate(200 388)">
+        <rect x="-8" y="-8" width="316" height="146" rx="12" class="term-glow-cyan"/>
+        <rect x="20" y="14" width="290" height="124" rx="6" class="term-fill"/>
+        <rect x="20" y="14" width="290" height="124" rx="6" class="term-stroke"/>
+        <rect x="20" y="14" width="290" height="22" class="term-bar"/>
+        <circle cx="32" cy="25" r="3" class="dot-small"/>
+        <circle cx="44" cy="25" r="3" class="dot-small"/>
+        <circle cx="56" cy="25" r="3" class="dot-small"/>
+        <text x="36" y="62" class="term-mono" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="600">Claude</text>
+        <text x="36" y="80" class="term-mono" font-family="Segoe UI, Arial, sans-serif" font-size="9">vms-anomaly-detection</text>
+        <text x="36" y="104" class="term-mono" font-family="Segoe UI, Arial, sans-serif" font-size="10">&gt; resumed conversation</text>
+        <rect x="36" y="116" width="8" height="12" class="term-bar"/>
+      </g>
+
+      <text x="350" y="570" class="branch-sub" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="middle">Tab comes back to focus</text>
+    </g>
+
+    <g id="card-branch-right" class="card">
+      <rect x="650" y="330" width="400" height="260" rx="10" class="branch-orange-fill"/>
+      <rect x="650" y="330" width="400" height="260" rx="10" class="branch-orange-stroke"/>
+      <rect x="650" y="330" width="400" height="5" rx="2.5" fill="#da8230" opacity="0.6"/>
+      <text x="850" y="368" class="branch-title-orange" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="700" text-anchor="middle">Not open yet?</text>
+
+      <g id="illus-spawn" transform="translate(680 392)">
+        <g id="spinner">
+          <circle cx="50" cy="64" r="22" class="spinner-ring"/>
+          <circle cx="50" cy="64" r="22" class="spinner-arc-circ"/>
+        </g>
+        <rect x="110" y="14" width="240" height="124" rx="6" class="term-fill-orange"/>
+        <rect x="110" y="14" width="240" height="124" rx="6" class="term-stroke-orange"/>
+        <rect x="110" y="14" width="240" height="22" class="term-bar-orange"/>
+        <circle cx="122" cy="25" r="3" class="dot-small"/>
+        <circle cx="134" cy="25" r="3" class="dot-small"/>
+        <circle cx="146" cy="25" r="3" class="dot-small"/>
+        <text x="124" y="62" class="term-mono" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="600">Claude</text>
+        <text x="124" y="80" class="term-mono" font-family="Segoe UI, Arial, sans-serif" font-size="9">vms-anomaly-detection</text>
+        <text x="124" y="104" class="term-mono" font-family="Segoe UI, Arial, sans-serif" font-size="10">&gt; ready</text>
+        <rect x="124" y="116" width="8" height="12" class="term-bar-orange"/>
+      </g>
+
+      <text x="850" y="570" class="branch-sub" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="middle">New terminal, Claude already running</text>
+    </g>
+  </g>
+
+  <g id="connectors">
+    <path d="M489.00,196.00 L358.00,196.00 L350.00,204.00 L350.00,317.00" class="conn-cyan"/>
+    <polygon points="350.00,329.00 360.00,317.00 340.00,317.00" class="arrow-cyan"/>
+    <path d="M711.00,196.00 L842.00,196.00 L850.00,204.00 L850.00,317.00" class="conn-orange"/>
+    <polygon points="850.00,329.00 860.00,317.00 840.00,317.00" class="arrow-orange"/>
+  </g>
+
+  <g id="content">
+    <text x="600" y="630" class="fg-3" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-style="italic" text-anchor="middle">No duplicate tabs. No bash flicker.</text>
+  </g>
+
+</svg>
