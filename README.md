@@ -8,21 +8,20 @@
 [![Brought To You By KOLOMOLO](https://img.shields.io/badge/Brought%20To%20You%20By-KOLOMOLO-00ffff?style=flat)](https://kolomolo.com)
 [![Donate PayPal](https://img.shields.io/badge/Donate-PayPal-blue?style=flat)](https://www.paypal.com/donate/?hosted_button_id=B4KPBJDLLXTSA)
 
-Manage Claude Code CLI sessions from inside JupyterLab. A left-sidebar panel lists every project under `~/.claude/projects/` deduplicated to one row per folder, marks live remote-control sessions with a green dot, and lets you jump back into any session by opening (or reactivating) a terminal pwd'd to that project and auto-running `claude --resume <id>`.
+Browse, resume, and manage your Claude Code sessions from a JupyterLab side panel. One click reactivates the right terminal, no duplicate tabs, with a live indicator showing which sessions are currently active.
 
 ![Claude Code Sessions panel](.resources/screenshot.png)
 
 ## Features
 
-- **Three-section side panel** - Favourites, Recent (top 10 by activity), and All. Each section scrolls independently; Favourites disappears when empty
-- **Live remote-control indicator** - green dot on rows whose `~/.claude/sessions/<pid>.json` is alive (verified via `os.kill(pid, 0)`)
-- **One-click resume** - click a row to find an existing terminal pwd'd to that project (queried server-side from the pty's process tree) and reactivate its tab; only spawns a fresh terminal if none matches. Concurrent rapid clicks are coalesced
-- **Smart name resolution** - shows the user-set `/rename` name when available; auto-detected names (volatile across the same `sessionId` or 3+ token lowercase-kebab) fall back to the folder basename. Toggle the behaviour via the `resolveSessionNames` setting
-- **Path-segment disambiguation** - when two sessions share the same display name, the row reveals the minimum number of trailing path segments needed for each to be unique
-- **Favourites** - star a session via the right-click menu; persisted server-side at `~/.claude/jupyterlab_claude_code_extension.json`
-- **Layout restorer** - panel visibility persists across JupyterLab reloads
-- **Auto-disabled** when the `claude` binary is not on `PATH`
-- **Hover tooltip** with relative path (vs JL root), last activity, message count, branch, first prompt, session id
+- **Three-section side panel** - Favourites, Recent, and All projects, each scrolling independently
+- **Live indicator** - a green dot marks sessions that are currently running somewhere
+- **One-click resume** - click a row to jump back into that session in a terminal. If a terminal for the project is already open, it's reused instead of duplicated
+- **Favourites** - star projects you keep coming back to via the right-click menu
+- **Search** - fuzzy filter at the top of the panel
+- **Presentation modes** - label rows by session name, folder name, or path relative to the JupyterLab root
+- **Hover tooltip** with project path, last activity, message count, branch, and session id
+- **Auto-disabled** when the Claude Code CLI is not installed
 
 ## Requirements
 
