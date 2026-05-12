@@ -129,4 +129,7 @@ dmypy.json
 
 # pytest artefacts
 junit.xml
-.article_writer/
+
+# article-writer DB symlink to the workspace-level store (also matches the
+# symlink itself, not just a real directory)
+.article_writer
