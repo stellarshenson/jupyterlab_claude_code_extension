@@ -56,28 +56,14 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
-def _looks_auto_named(name: str) -> bool:
-    """Heuristic: Claude's auto-derived names are 3+ token lowercase
-    kebab-case strings (e.g. ``sessions-panel-four-fixes``). User
-    ``/rename``s in observed data are short or use other formats.
-    """
-    if not name:
-        return False
-    parts = name.split("-")
-    if len(parts) < 3:
-        return False
-    return all(p and p.isalnum() and p.islower() for p in parts)
-
-
 def session_state_by_cwd(claude_root: Path) -> dict[str, dict]:
     """Map ``cwd`` -> latest ``~/.claude/sessions/<pid>.json`` record fields.
 
     Each value carries:
-      * ``name`` - the renamed session name (set by Claude's ``/rename``
-        command) or ``None``. To distinguish a real ``/rename`` (stable
-        name) from Claude's auto-derived topic name (which mutates across
-        pid files for the same sessionId), we treat any sessionId with
-        more than one distinct ``name`` value as auto-named and drop it.
+      * ``name`` - the session's name straight from the pid file, or ``None``
+        if it has none. We do not try to tell a ``/rename`` apart from a
+        Claude-derived topic name: whatever Claude currently calls the
+        session is what the panel shows. If it drifts, ``/rename`` pins it.
       * ``live_pid`` - the PID if it is still alive, else ``None``
       * ``session_id`` - the sessionId in that record
       * ``updated_at`` - ms-epoch of last update
@@ -90,22 +76,10 @@ def session_state_by_cwd(claude_root: Path) -> dict[str, dict]:
     if not sessions_dir.is_dir():
         return by_cwd
 
-    # Pass 1 - collect every distinct ``name`` per sessionId so we can flag
-    # volatile (auto-derived) names.
-    names_by_session: dict[str, set[str]] = {}
-    raw: list[dict] = []
     for entry in sessions_dir.glob("*.json"):
         data = _load_json(entry)
         if not isinstance(data, dict):
             continue
-        raw.append(data)
-        sid = data.get("sessionId")
-        nm = data.get("name")
-        if isinstance(sid, str) and isinstance(nm, str) and nm.strip():
-            names_by_session.setdefault(sid, set()).add(nm.strip())
-
-    # Pass 2 - pick latest record per cwd, drop volatile names.
-    for data in raw:
         cwd = data.get("cwd")
         if not isinstance(cwd, str):
             continue
@@ -117,18 +91,8 @@ def session_state_by_cwd(claude_root: Path) -> dict[str, dict]:
         live = isinstance(pid, int) and _pid_alive(pid)
         sid = data.get("sessionId") if isinstance(data.get("sessionId"), str) else None
         name = data.get("name")
-        is_volatile = (
-            sid is not None and len(names_by_session.get(sid, set())) > 1
-        )
-        is_auto = is_volatile or (
-            isinstance(name, str) and _looks_auto_named(name.strip())
-        )
         by_cwd[cwd] = {
-            "name": (
-                name
-                if isinstance(name, str) and name.strip() and not is_auto
-                else None
-            ),
+            "name": name.strip() if isinstance(name, str) and name.strip() else None,
             "live_pid": pid if live else None,
             "session_id": sid,
             "updated_at": updated_at,
@@ -351,12 +315,13 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
     ``created``, ``modified``, ``file_mtime``, ``git_branch``,
     ``remote_control``, ``favourite``.
 
-    ``name_source`` is ``"rename"`` when the name came from an explicit
-    ``/rename`` in Claude (via ``~/.claude/sessions/<pid>.json``), or
+    ``name_source`` is ``"rename"`` when the name came from the session's
+    ``name`` field in ``~/.claude/sessions/<pid>.json`` (whatever Claude
+    currently calls it, whether set via ``/rename`` or auto-derived), or
     ``"basename"`` when it fell back to the project folder name. The frontend
-    uses this to keep user-set rename names intact during display-name
+    uses this to keep session-supplied names intact during display-name
     disambiguation (which otherwise rolls colliding names back to path tails
-    and masks the rename).
+    and masks the name).
     """
     root = claude_root if claude_root is not None else claude_dir()
     projects_dir = root / PROJECTS_DIRNAME
@@ -400,12 +365,13 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
         first_prompt = latest.get("firstPrompt") or ""
 
         state = states.get(project_path) or {}
-        renamed = state.get("name")
-        # Only an explicit /rename overrides the folder name. Claude's
-        # auto-generated ``summary`` field (e.g. "Setup CLI Config, Badges")
-        # is not used as a display name - it lives in the tooltip instead.
-        if renamed:
-            name = renamed
+        session_name = state.get("name")
+        # If the session carries a name, use it verbatim - no second-guessing
+        # whether Claude derived it or the user set it via /rename. The
+        # ``summary`` field (e.g. "Setup CLI Config, Badges") still stays out
+        # of the label; it lives in the tooltip instead.
+        if session_name:
+            name = session_name
             name_source = "rename"
         else:
             name = os.path.basename(project_path) or project_dir.name

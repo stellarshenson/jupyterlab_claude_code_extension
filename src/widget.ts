@@ -22,7 +22,7 @@ import {
   ISessionsListResponse
 } from './types';
 
-const POLL_INTERVAL_MS = 10_000;
+const POLL_INTERVAL_MS = 30_000;
 const DEFAULT_RECENT_LIMIT = 10;
 const EXPANDED_STORAGE_KEY = 'jupyterlab_claude_code_extension:expanded';
 
@@ -296,9 +296,13 @@ export class ClaudeCodeSessionsWidget extends Widget {
   // ------------------------------------------------------------------ data
 
   private async _fetch(): Promise<void> {
+    // `cache: 'no-store'` so the manual refresh button (and the post-launch
+    // refresh) always re-read the server's view of ~/.claude rather than a
+    // possibly-stale browser-cached response.
     const data = await requestAPI<ISessionsListResponse>(
       'sessions',
-      this._serverSettings
+      this._serverSettings,
+      { cache: 'no-store' }
     );
     this._sessions = data.sessions ?? [];
     this._render();
@@ -390,10 +394,8 @@ export class ClaudeCodeSessionsWidget extends Widget {
       if (cached && !cached.isDisposed) {
         if (forceDangerous) {
           await this._showCloseExistingDialog();
-          this._app.shell.activateById(cached.id);
-          return;
         }
-        this._app.shell.activateById(cached.id);
+        this._focusTerminal(cached);
         return;
       }
 
@@ -404,10 +406,8 @@ export class ClaudeCodeSessionsWidget extends Widget {
         this._wireTerminalDisposal(session.project_path, found);
         if (forceDangerous) {
           await this._showCloseExistingDialog();
-          this._app.shell.activateById(found.id);
-          return;
         }
-        this._app.shell.activateById(found.id);
+        this._focusTerminal(found);
         return;
       }
 
@@ -441,13 +441,42 @@ export class ClaudeCodeSessionsWidget extends Widget {
         if (widget?.id) {
           this._terminalsByPath.set(session.project_path, widget);
           this._wireTerminalDisposal(session.project_path, widget);
+          this._focusTerminal(widget);
         }
       } finally {
         spinner.resolve();
       }
     } catch (err) {
       this._showError(err);
+    } finally {
+      // Reuse or fresh launch, either way the picture changed (a session may
+      // now be remote-controlled, a row may have appeared). Pull fresh state.
+      void this._fetch().catch(() => {
+        /* a poll tick will retry; nothing actionable here */
+      });
     }
+  }
+
+  /**
+   * Bring a terminal tab to the front AND hand it keyboard focus, so the
+   * user can start typing without an extra click. `activateById` only
+   * reveals the tab; the xterm inside doesn't always grab DOM focus,
+   * especially when the click originated in this sidebar. We defer the
+   * `term.focus()` to the next frame so the widget is attached and visible
+   * first.
+   */
+  private _focusTerminal(widget: any): void {
+    if (!widget || widget.isDisposed) {
+      return;
+    }
+    this._app.shell.activateById(widget.id);
+    requestAnimationFrame(() => {
+      try {
+        widget.content?.term?.focus?.();
+      } catch (_err) {
+        /* terminal may have been disposed in the meantime - ignore */
+      }
+    });
   }
 
   private async _findTerminalForCwd(projectPath: string): Promise<any | null> {

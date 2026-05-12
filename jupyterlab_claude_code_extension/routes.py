@@ -76,17 +76,6 @@ def _process_cwd_link(pid: int) -> str | None:
         return None
 
 
-def _process_pwd_env(pid: int) -> str | None:
-    try:
-        with open(f"/proc/{pid}/environ", "rb") as fh:
-            for entry in fh.read().split(b"\x00"):
-                if entry.startswith(b"PWD="):
-                    return entry[4:].decode("utf-8", errors="replace")
-    except OSError:
-        return None
-    return None
-
-
 def _tree_has_claude(root_pid: int) -> bool:
     """Return True iff any process in the pty's tree has ``comm == claude``.
 
@@ -105,23 +94,29 @@ def _tree_has_claude(root_pid: int) -> bool:
 
 
 def _terminal_cwds(root_pid: int) -> list[str]:
-    """Walk the pty's process tree and return ALL distinct cwds found.
+    """Walk the pty's process tree and return ALL distinct live cwds found.
 
-    The frontend matches a project_path against ANY entry. This handles the
-    common case where ``bash`` (the pty root) is still in the project folder
-    even when ``claude`` or one of its background-task sub-shells has cd'd
-    elsewhere (e.g. ``/tmp/claude-1000/...``).
+    Only ``/proc/<pid>/cwd`` (the kernel's authoritative current directory)
+    is consulted - never the ``PWD`` in ``/proc/<pid>/environ``, which is the
+    frozen exec-time environment and, for the pty's root process, is just
+    whatever ``PWD`` the Jupyter server itself was launched with (so every
+    terminal would otherwise report the server's startup directory). Walking
+    the whole tree still covers the case where ``bash`` (the pty root) sits
+    in the project folder while ``claude`` or a background sub-shell has cd'd
+    elsewhere (e.g. ``/tmp/claude-1000/...``). The frontend matches a
+    project_path against ANY entry.
     """
     seen: set[str] = set()
     out: list[str] = []
     queue: list[int] = [root_pid]
     while queue:
         pid = queue.pop(0)
-        for source in (_process_cwd_link(pid), _process_pwd_env(pid)):
-            if not source or not source.startswith("/"):
-                continue
-            if source.startswith(("/proc/", "/sys/", "/dev/")):
-                continue
+        source = _process_cwd_link(pid)
+        if (
+            source
+            and source.startswith("/")
+            and not source.startswith(("/proc/", "/sys/", "/dev/"))
+        ):
             try:
                 resolved = os.path.realpath(source)
             except OSError:

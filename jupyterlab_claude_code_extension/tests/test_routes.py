@@ -9,6 +9,7 @@ from unittest import mock
 
 import pytest
 
+from jupyterlab_claude_code_extension import routes as routes_mod
 from jupyterlab_claude_code_extension import sessions as sessions_mod
 
 
@@ -219,10 +220,10 @@ def test_name_source_is_rename_when_pid_file_carries_name(
     assert rows["/home/user/projC"]["name_source"] == "basename"
 
 
-def test_auto_name_detected_and_dropped(fake_claude: Path) -> None:
-    """Two pid files for the same sessionId with different ``name`` values
-    should be treated as auto-derived (volatile) and ``state.name`` dropped
-    so the row falls back to basename."""
+def test_latest_pid_name_wins(fake_claude: Path) -> None:
+    """When several pid files for the same cwd carry different ``name``
+    values, the one with the highest ``updatedAt`` is used verbatim - we no
+    longer second-guess whether a name is a /rename or a Claude topic."""
     sessions_dir = fake_claude / "sessions"
     sessions_dir.mkdir()
     (sessions_dir / "100.json").write_text(json.dumps({
@@ -234,15 +235,15 @@ def test_auto_name_detected_and_dropped(fake_claude: Path) -> None:
         "updatedAt": 200, "name": "topic-two",
     }))
     state = sessions_mod.session_state_by_cwd(fake_claude)
-    assert state["/home/user/projA"]["name"] is None
+    assert state["/home/user/projA"]["name"] == "topic-two"
     rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
-    # Falls through to basename
-    assert rows["/home/user/projA"]["name"] == "projA"
+    assert rows["/home/user/projA"]["name"] == "topic-two"
+    assert rows["/home/user/projA"]["name_source"] == "rename"
 
 
-def test_rename_with_consistent_name_kept(fake_claude: Path) -> None:
+def test_consistent_name_kept(fake_claude: Path) -> None:
     """Multiple pid files for the same sessionId all sharing the same
-    ``name`` indicates a real ``/rename`` and should be retained."""
+    ``name`` - that name is what the panel shows."""
     sessions_dir = fake_claude / "sessions"
     sessions_dir.mkdir()
     for pid, ts in ((100, 100), (200, 200), (300, 300)):
@@ -254,16 +255,21 @@ def test_rename_with_consistent_name_kept(fake_claude: Path) -> None:
     assert state["/home/user/projA"]["name"] == "renamed"
 
 
-def test_kebab_case_three_token_name_treated_as_auto(fake_claude: Path) -> None:
-    """Single pid file with a 3+ token lowercase-kebab name is auto."""
+def test_kebab_topic_name_used_verbatim(fake_claude: Path) -> None:
+    """A 3+ token lowercase-kebab name (which the old heuristic dropped as
+    "looks auto-generated") is now used as-is - this is exactly the shape a
+    ``/rename`` like ``graph-engine-kpi`` takes."""
     sessions_dir = fake_claude / "sessions"
     sessions_dir.mkdir()
     (sessions_dir / "100.json").write_text(json.dumps({
         "pid": 100, "sessionId": "S", "cwd": "/home/user/projA",
-        "updatedAt": 1, "name": "extract-shared-engine",
+        "updatedAt": 1, "name": "graph-engine-kpi",
     }))
     state = sessions_mod.session_state_by_cwd(fake_claude)
-    assert state["/home/user/projA"]["name"] is None
+    assert state["/home/user/projA"]["name"] == "graph-engine-kpi"
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/projA"]["name"] == "graph-engine-kpi"
+    assert rows["/home/user/projA"]["name_source"] == "rename"
 
 
 def test_two_token_name_kept_as_rename(fake_claude: Path) -> None:
@@ -557,6 +563,35 @@ def test_scan_jsonl_for_latest_cwd_reads_tail_of_large_file(tmp_path: Path) -> N
         fh.write(json.dumps({"type": "assistant", "cwd": "/new/path"}) + "\n")
     assert big.stat().st_size > window
     assert sessions_mod._scan_jsonl_for_latest_cwd(big) == "/new/path"
+
+
+# ---------------------------------------------------------------------------
+# Terminal cwd discovery
+# ---------------------------------------------------------------------------
+
+
+def test_terminal_cwds_only_reports_live_proc_cwd() -> None:
+    """``_terminal_cwds`` reports a process's *live* cwd from
+    ``/proc/<pid>/cwd`` only. It must not consult the ``PWD`` env in
+    ``/proc/<pid>/environ`` (the frozen exec-time value) - that source is the
+    reason every pty used to also report the Jupyter server's launch
+    directory and so matched the wrong session on click."""
+    assert not hasattr(routes_mod, "_process_pwd_env")
+    if not os.path.isdir("/proc/self"):
+        pytest.skip("needs Linux /proc")
+    cwds = routes_mod._terminal_cwds(os.getpid())
+    assert os.path.realpath(os.getcwd()) in cwds
+
+
+def test_terminal_cwds_tracks_chdir(tmp_path: Path, monkeypatch) -> None:
+    """The reported cwd follows ``chdir`` - the kernel symlink is live."""
+    if not os.path.isdir("/proc/self"):
+        pytest.skip("needs Linux /proc")
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    monkeypatch.chdir(target)
+    cwds = routes_mod._terminal_cwds(os.getpid())
+    assert os.path.realpath(str(target)) in cwds
 
 
 # ---------------------------------------------------------------------------
