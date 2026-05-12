@@ -113,9 +113,16 @@ export class ClaudeCodeSessionsWidget extends Widget {
   refresh(): void {
     this._showLoading();
     this._setRefreshSpinning(true);
-    this._fetch()
-      .catch(err => this._showError(err))
-      .finally(() => this._setRefreshSpinning(false));
+    // `_fetch` is filesystem-fast, so without a floor the refresh icon would
+    // spin for a single frame and read as "nothing happened". Hold the
+    // spinner for at least ~500 ms so the click visibly registers.
+    const minSpin = new Promise<void>(resolve =>
+      window.setTimeout(resolve, 500)
+    );
+    Promise.all([
+      this._fetch().catch(err => this._showError(err)),
+      minSpin
+    ]).finally(() => this._setRefreshSpinning(false));
   }
 
   /** Choose how rows are labelled: by session name, folder name, or path. */
