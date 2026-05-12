@@ -5,6 +5,7 @@ const session = (over: Partial<ISession> = {}): ISession => ({
   encoded_path: '-p',
   session_id: 'sid',
   name: 'P',
+  name_source: 'basename',
   summary: '',
   first_prompt: '',
   message_count: 0,

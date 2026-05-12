@@ -17,7 +17,7 @@ const WIDGET_ID = 'jupyterlab-claude-code-extension';
 const plugin: JupyterFrontEndPlugin<void> = {
   id: PLUGIN_ID,
   description:
-    'Side panel listing Claude Code sessions per project folder, with remote-control indicator, favourites, and one-click resume in a terminal.',
+    'Side panel listing Claude Code sessions per project folder, with remote-control indicator, favorites, and one-click resume in a terminal.',
   autoStart: true,
   requires: [ILabShell],
   optional: [ILayoutRestorer, ISettingRegistry, ITerminalTracker],

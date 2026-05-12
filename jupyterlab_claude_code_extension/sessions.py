@@ -173,27 +173,52 @@ def _pick_latest_entry(entries: list[dict]) -> dict | None:
     )
 
 
+def _jsonl_cwd(jsonl: Path) -> str | None:
+    """Best-effort cwd for a session JSONL: the most recent ``cwd`` it records,
+    falling back to the first one near the top of the file."""
+    return _scan_jsonl_for_latest_cwd(jsonl) or _scan_jsonl_for_cwd(jsonl)
+
+
 def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
-    """Pick the latest entry for a project dir, trusting the filesystem.
+    """Pick the representative session for a project dir, trusting the filesystem.
 
     Claude's ``sessions-index.json`` can drift - an interrupted write or a
     crash can leave it referencing only an older sessionId while newer
-    JSONLs sit on disk. To stay robust we scan ``*.jsonl`` ourselves, pick
-    the file with the highest fs mtime, and enrich it with the matching
-    index entry's metadata (summary, firstPrompt, ...) when available.
-    Falls back to a minimal record otherwise.
+    JSONLs sit on disk - so we scan ``*.jsonl`` ourselves rather than trust
+    the index alone. Among the JSONLs we prefer the most recent one whose
+    recorded ``cwd`` is *consistent with how Claude named this directory*
+    (``_encode_path(cwd) == project_dir.name``). That matters after a folder
+    rename: Claude re-homes the old session files under the new directory but
+    their records still carry the old ``cwd``, so the newest file on disk can
+    point at a path that no longer exists. Only when no JSONL is consistent do
+    we fall back to the plain newest file. The chosen file's metadata
+    (summary, firstPrompt, ...) is enriched from the matching index entry when
+    available; ``projectPath`` is taken from the JSONL itself, since the
+    index's ``originalPath`` is the value most likely to be stale post-rename.
     """
     jsonls = list(project_dir.glob("*.jsonl"))
     if not jsonls:
         return None
-    latest_jsonl = max(jsonls, key=lambda p: p.stat().st_mtime)
-    sid = latest_jsonl.stem
-    fs_mtime = int(latest_jsonl.stat().st_mtime * 1000)
+    jsonls.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    dirname = project_dir.name
+
+    chosen: Path | None = None
+    chosen_cwd: str | None = None
+    for jsonl in jsonls:
+        cwd = _jsonl_cwd(jsonl)
+        if cwd and _encode_path(cwd) == dirname:
+            chosen, chosen_cwd = jsonl, cwd
+            break
+    if chosen is None:
+        chosen = jsonls[0]
+        chosen_cwd = _jsonl_cwd(chosen)
+
+    sid = chosen.stem
+    fs_mtime = int(chosen.stat().st_mtime * 1000)
 
     indexed: dict | None = None
     if isinstance(index, dict):
-        entries = index.get("entries") or []
-        for e in entries:
+        for e in index.get("entries") or []:
             if isinstance(e, dict) and e.get("sessionId") == sid:
                 indexed = e
                 break
@@ -201,11 +226,13 @@ def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
     if indexed is not None:
         latest = dict(indexed)
         latest["fileMtime"] = max(int(latest.get("fileMtime") or 0), fs_mtime)
+        if chosen_cwd:
+            latest["projectPath"] = chosen_cwd
         return latest
 
     return {
         "sessionId": sid,
-        "fullPath": str(latest_jsonl),
+        "fullPath": str(chosen),
         "fileMtime": fs_mtime,
         "summary": "",
         "firstPrompt": "",
@@ -213,11 +240,12 @@ def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
         "created": None,
         "modified": None,
         "gitBranch": None,
-        "projectPath": _scan_jsonl_for_cwd(latest_jsonl),
+        "projectPath": chosen_cwd,
     }
 
 
 _JSONL_CWD_SCAN_LIMIT = 50
+_JSONL_CWD_TAIL_BYTES = 131072  # 128 KiB - enough to hold the last cwd record
 
 
 def _scan_jsonl_for_cwd(path: Path) -> str | None:
@@ -237,6 +265,36 @@ def _scan_jsonl_for_cwd(path: Path) -> str | None:
     except OSError:
         return None
     return None
+
+
+def _scan_jsonl_for_latest_cwd(path: Path) -> str | None:
+    """Return the most recent ``cwd`` field by reading the tail of ``path``.
+
+    Reads the last ``_JSONL_CWD_TAIL_BYTES`` of the file, drops the (likely
+    partial) first line, and returns the ``cwd`` of the last record that
+    carries one. This is the path the session was actually running in last -
+    which differs from the front of the file when the project folder was
+    renamed and Claude re-homed the session under the new directory.
+    """
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as fh:
+            if size > _JSONL_CWD_TAIL_BYTES:
+                fh.seek(-_JSONL_CWD_TAIL_BYTES, os.SEEK_END)
+                fh.readline()  # discard the partial line at the seek point
+            chunk = fh.read()
+    except OSError:
+        return None
+    latest: str | None = None
+    for raw_line in chunk.splitlines():
+        try:
+            record = json.loads(raw_line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        cwd = record.get("cwd") if isinstance(record, dict) else None
+        if isinstance(cwd, str) and cwd:
+            latest = cwd
+    return latest
 
 
 def _fallback_from_jsonl(project_dir: Path) -> dict | None:
@@ -315,16 +373,28 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
         index_path = project_dir / INDEX_FILENAME
         index = _load_json(index_path) if index_path.is_file() else None
 
-        project_path: str | None = None
-        if isinstance(index, dict):
-            project_path = index.get("originalPath") if isinstance(index.get("originalPath"), str) else None
-
         latest = _resolve_latest(project_dir, index)
         if latest is None:
             continue
 
+        # ``_resolve_latest`` already picked the cwd that is consistent with
+        # this directory's name when one exists, so trust its ``projectPath``
+        # first. Only fall back to the index's ``originalPath`` (which can be
+        # stale after a folder rename) or a lossy decode of the dir name.
+        resolved_path = latest.get("projectPath")
+        original_path = (
+            index.get("originalPath")
+            if isinstance(index, dict) and isinstance(index.get("originalPath"), str)
+            else None
+        )
+        project_path: str | None = None
+        for candidate in (resolved_path, original_path):
+            if isinstance(candidate, str) and candidate:
+                project_path = candidate
+                if _encode_path(candidate) == project_dir.name:
+                    break
         if not project_path:
-            project_path = latest.get("projectPath") if isinstance(latest.get("projectPath"), str) else _decode_dirname(project_dir.name)
+            project_path = _decode_dirname(project_dir.name)
 
         summary = latest.get("summary") or ""
         first_prompt = latest.get("firstPrompt") or ""
@@ -394,11 +464,17 @@ def toggle_favourite(claude_root: Path, project_path: str, favourite: bool) -> l
     return favs
 
 
-def remove_session(claude_root: Path, encoded_path: str) -> bool:
-    """Delete the project folder ``~/.claude/projects/<encoded_path>``.
+def remove_session(
+    claude_root: Path, encoded_path: str, to_trash: bool = False
+) -> bool:
+    """Remove the project folder ``~/.claude/projects/<encoded_path>``.
 
-    Returns True on success. Refuses to remove anything outside the projects dir
-    (path traversal protection).
+    When ``to_trash`` is true the folder is sent to the desktop trash via
+    ``send2trash`` (the same mechanism Jupyter's contents manager uses);
+    if no trash is available - or the move fails for any reason - it falls
+    back to permanent deletion. When ``to_trash`` is false the folder is
+    deleted permanently outright. Returns True on success. Refuses to remove
+    anything outside the projects dir (path traversal protection).
     """
     if not encoded_path or "/" in encoded_path or encoded_path in (".", ".."):
         return False
@@ -411,5 +487,15 @@ def remove_session(claude_root: Path, encoded_path: str) -> bool:
         return False
     if not target.is_dir():
         return False
+    if to_trash:
+        try:
+            from send2trash import send2trash
+
+            send2trash(str(target))
+            return True
+        except Exception:
+            # No trash backend, unsupported filesystem, permission error, ...
+            # fall through to a permanent delete.
+            pass
     shutil.rmtree(target)
     return True

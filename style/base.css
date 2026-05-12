@@ -24,13 +24,16 @@
   min-height: 24px;
 }
 
+/* The panel title and section headers mirror the file browser's headers
+   (jp-Favorites-header / jp-FileBrowser-header) so the sidebar reads
+   uniformly: 600 weight, uppercase, ui-font-size0, 1px tracking. */
 .jp-ClaudeSessionsPanel-title {
   flex: 1 1 auto;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 1px;
   text-transform: uppercase;
   font-size: var(--jp-ui-font-size0);
-  color: var(--jp-ui-font-color2);
+  color: var(--jp-ui-font-color1);
 }
 
 .jp-ClaudeSessionsPanel-iconButton {
@@ -123,7 +126,7 @@
   font-family: inherit;
   font-size: var(--jp-ui-font-size0);
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 1px;
   text-transform: uppercase;
 }
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 from unittest import mock
 
@@ -333,6 +334,231 @@ def test_remove_session_rejects_traversal(fake_claude: Path) -> None:
     assert sessions_mod.remove_session(fake_claude, "") is False
 
 
+def test_remove_session_to_trash_uses_send2trash(fake_claude: Path, monkeypatch) -> None:
+    import send2trash
+
+    calls: list[str] = []
+    monkeypatch.setattr(send2trash, "send2trash", calls.append)
+    target = fake_claude / "projects" / "-home-user-projA"
+    ok = sessions_mod.remove_session(fake_claude, "-home-user-projA", to_trash=True)
+    assert ok is True
+    assert calls == [str(target.resolve())]
+    # send2trash was stubbed - the folder is untouched, but the call happened.
+    assert target.is_dir()
+
+
+def test_remove_session_to_trash_falls_back_to_permanent_delete(
+    fake_claude: Path, monkeypatch
+) -> None:
+    import send2trash
+
+    def boom(_path: str) -> None:
+        raise OSError("no trash backend on this platform")
+
+    monkeypatch.setattr(send2trash, "send2trash", boom)
+    target = fake_claude / "projects" / "-home-user-projA"
+    ok = sessions_mod.remove_session(fake_claude, "-home-user-projA", to_trash=True)
+    assert ok is True
+    assert not target.exists()
+
+
+def test_resolve_latest_prefers_jsonl_tail_cwd_over_stale_head(tmp_path: Path) -> None:
+    """A session re-homed after its project folder was renamed keeps the old
+    cwd in its early records. ``list_sessions`` must report the *current*
+    folder (the JSONL tail), not the stale one (the JSONL head) - otherwise a
+    stale ``~/.claude/sessions/<pid>.json`` keyed on the old cwd masks the
+    real path and name (issue: a renamed project showed an old name and a
+    path that no longer exists)."""
+    root = tmp_path / ".claude"
+    proj = root / "projects" / "-home-user-newname"
+    proj.mkdir(parents=True)
+    lines = [
+        json.dumps({"cwd": "/home/user/oldname", "type": "user"}),
+        json.dumps({"type": "assistant"}),
+        json.dumps({"cwd": "/home/user/oldname", "type": "assistant"}),
+        # ... folder renamed, session resumed under the new path ...
+        json.dumps({"cwd": "/home/user/newname", "type": "user"}),
+        json.dumps({"cwd": "/home/user/newname", "type": "assistant"}),
+    ]
+    (proj / "sess-1.jsonl").write_text("\n".join(lines) + "\n")
+    # A leftover pid file from the old folder, carrying a /rename name.
+    sessions_dir = root / "sessions"
+    sessions_dir.mkdir()
+    (sessions_dir / "9.json").write_text(json.dumps({
+        "pid": 9, "sessionId": "sess-1", "cwd": "/home/user/oldname",
+        "updatedAt": 1, "name": "court-cases",
+    }))
+
+    rows = sessions_mod.list_sessions(root)
+    assert len(rows) == 1
+    assert rows[0]["project_path"] == "/home/user/newname"
+    assert rows[0]["name"] == "newname"
+    assert rows[0]["name_source"] == "basename"
+    assert rows[0]["session_id"] == "sess-1"
+
+
+# ---------------------------------------------------------------------------
+# Name / project-path resolution
+# ---------------------------------------------------------------------------
+
+
+def _jsonl(path: Path, cwds: list[str | None]) -> None:
+    """Write a tiny session JSONL: one record per entry, with ``cwd`` set when
+    the entry is not ``None``."""
+    lines = []
+    for c in cwds:
+        rec: dict = {"type": "user"}
+        if c is not None:
+            rec["cwd"] = c
+        lines.append(json.dumps(rec))
+    path.write_text("\n".join(lines) + "\n")
+
+
+def test_resolve_latest_prefers_dir_consistent_jsonl_over_newer_stale_one(
+    tmp_path: Path,
+) -> None:
+    """When several JSONLs sit in a project dir, the resolver must pick the
+    most recent one whose recorded cwd is consistent with the directory name -
+    not simply the newest file (which may be a pre-rename leftover)."""
+    root = tmp_path / ".claude"
+    proj = root / "projects" / "-home-user-newname"
+    proj.mkdir(parents=True)
+    _jsonl(proj / "stale.jsonl", ["/home/user/oldname", "/home/user/oldname"])
+    os.utime(proj / "stale.jsonl", (3000, 3000))  # newer on disk
+    _jsonl(proj / "current.jsonl", ["/home/user/newname", "/home/user/newname"])
+    os.utime(proj / "current.jsonl", (2000, 2000))  # older on disk
+
+    rows = sessions_mod.list_sessions(root)
+    assert len(rows) == 1
+    assert rows[0]["project_path"] == "/home/user/newname"
+    assert rows[0]["name"] == "newname"
+    assert rows[0]["session_id"] == "current"
+
+
+def test_resolve_latest_falls_back_to_newest_jsonl_cwd_when_none_match_dir(
+    tmp_path: Path,
+) -> None:
+    """If no JSONL's cwd encodes to the directory name (e.g. the folder was
+    deleted or moved elsewhere), fall back to the newest JSONL's recorded cwd
+    rather than a lossy decode of the encoded directory name."""
+    root = tmp_path / ".claude"
+    proj = root / "projects" / "-home-user-deleted-proj"
+    proj.mkdir(parents=True)
+    _jsonl(proj / "s.jsonl", ["/home/user/some-other-place"])
+
+    rows = sessions_mod.list_sessions(root)
+    assert len(rows) == 1
+    assert rows[0]["project_path"] == "/home/user/some-other-place"
+    assert rows[0]["name"] == "some-other-place"
+    assert rows[0]["name_source"] == "basename"
+
+
+def test_index_original_path_overridden_when_inconsistent_with_dir(
+    tmp_path: Path,
+) -> None:
+    """A stale ``originalPath`` in ``sessions-index.json`` must not win over a
+    JSONL-recorded cwd that actually matches how Claude named the directory;
+    the entry's metadata (summary, ...) is still carried through."""
+    root = tmp_path / ".claude"
+    proj = root / "projects" / "-home-user-renamed"
+    proj.mkdir(parents=True)
+    (proj / "sessions-index.json").write_text(json.dumps({
+        "version": 1,
+        "originalPath": "/home/user/oldname",  # stale after the rename
+        "entries": [{
+            "sessionId": "sess-x",
+            "fileMtime": 5_000_000,
+            "summary": "carried summary",
+            "firstPrompt": "carried prompt",
+            "messageCount": 7,
+        }],
+    }))
+    _jsonl(proj / "sess-x.jsonl", ["/home/user/oldname", "/home/user/renamed"])
+
+    rows = sessions_mod.list_sessions(root)
+    assert len(rows) == 1
+    assert rows[0]["project_path"] == "/home/user/renamed"
+    assert rows[0]["name"] == "renamed"
+    assert rows[0]["summary"] == "carried summary"
+    assert rows[0]["session_id"] == "sess-x"
+
+
+def test_index_original_path_kept_when_consistent_with_dir(tmp_path: Path) -> None:
+    """When ``originalPath`` agrees with the directory name it is used as-is,
+    even if the JSONL records no cwd of its own."""
+    root = tmp_path / ".claude"
+    proj = root / "projects" / "-home-user-projX"
+    proj.mkdir(parents=True)
+    (proj / "sessions-index.json").write_text(json.dumps({
+        "version": 1,
+        "originalPath": "/home/user/projX",
+        "entries": [{"sessionId": "a", "fileMtime": 1, "summary": "s"}],
+    }))
+    _jsonl(proj / "a.jsonl", [None])  # no cwd anywhere
+
+    rows = sessions_mod.list_sessions(root)
+    assert len(rows) == 1
+    assert rows[0]["project_path"] == "/home/user/projX"
+    assert rows[0]["name"] == "projX"
+
+
+def test_resolve_latest_recognises_underscore_in_cwd(tmp_path: Path) -> None:
+    """Claude encodes ``_`` to ``-`` in directory names, so a cwd containing an
+    underscore that encodes to the directory name counts as consistent (and is
+    reported with the underscore intact)."""
+    root = tmp_path / ".claude"
+    proj = root / "projects" / "-home-user-my-proj"
+    proj.mkdir(parents=True)
+    # /home/user/my_proj  ->  -home-user-my-proj  (matches the dir name)
+    _jsonl(proj / "u.jsonl", ["/home/user/my_proj", "/home/user/my_proj"])
+
+    rows = sessions_mod.list_sessions(root)
+    assert len(rows) == 1
+    assert rows[0]["project_path"] == "/home/user/my_proj"
+    assert rows[0]["name"] == "my_proj"
+
+
+def test_rename_retrieved_when_pid_file_keyed_on_current_path(tmp_path: Path) -> None:
+    """A ``/rename`` is surfaced when a ``~/.claude/sessions/<pid>.json`` for
+    the session carries the *current* cwd - the path the resolver settles on."""
+    root = tmp_path / ".claude"
+    proj = root / "projects" / "-home-user-litigation-timeline"
+    proj.mkdir(parents=True)
+    _jsonl(
+        proj / "sess-1.jsonl",
+        ["/home/user/2025-12_pozb", "/home/user/litigation-timeline"],
+    )
+    sessions_dir = root / "sessions"
+    sessions_dir.mkdir()
+    (sessions_dir / "7.json").write_text(json.dumps({
+        "pid": 7, "sessionId": "sess-1",
+        "cwd": "/home/user/litigation-timeline",
+        "updatedAt": 10, "name": "court-cases",
+    }))
+
+    rows = sessions_mod.list_sessions(root)
+    assert len(rows) == 1
+    assert rows[0]["project_path"] == "/home/user/litigation-timeline"
+    assert rows[0]["name"] == "court-cases"
+    assert rows[0]["name_source"] == "rename"
+
+
+def test_scan_jsonl_for_latest_cwd_reads_tail_of_large_file(tmp_path: Path) -> None:
+    """The tail scan must work on files larger than its read window: padding
+    records carry the old cwd, the final records carry the new one."""
+    big = tmp_path / "big.jsonl"
+    window = sessions_mod._JSONL_CWD_TAIL_BYTES
+    pad_line = json.dumps({"type": "assistant", "cwd": "/old/path", "pad": "x" * 256})
+    n_pad = (window // (len(pad_line) + 1)) + 64  # comfortably exceed the window
+    with big.open("w", encoding="utf-8") as fh:
+        for _ in range(n_pad):
+            fh.write(pad_line + "\n")
+        fh.write(json.dumps({"type": "user", "cwd": "/new/path"}) + "\n")
+        fh.write(json.dumps({"type": "assistant", "cwd": "/new/path"}) + "\n")
+    assert big.stat().st_size > window
+    assert sessions_mod._scan_jsonl_for_latest_cwd(big) == "/new/path"
+
+
 # ---------------------------------------------------------------------------
 # Tornado handler tests
 # ---------------------------------------------------------------------------
@@ -383,13 +609,20 @@ async def test_favourite_rejects_bad_body(jp_fetch, patched_claude_dir) -> None:
     assert "400" in str(exc.value)
 
 
-async def test_remove_endpoint(jp_fetch, patched_claude_dir) -> None:
+async def test_remove_endpoint(jp_fetch, patched_claude_dir, monkeypatch) -> None:
+    # The handler honours ContentsManager.delete_to_trash (default on); stub
+    # send2trash so the test doesn't move anything into the real desktop trash.
+    import send2trash
+
+    seen: list[str] = []
+    monkeypatch.setattr(send2trash, "send2trash", lambda p: (seen.append(p), shutil.rmtree(p)))
     body = json.dumps({"encoded_path": "-home-user-projA"})
     response = await jp_fetch(
         "jupyterlab-claude-code-extension", "sessions", "remove",
         method="POST", body=body,
     )
     assert response.code == 200
+    assert seen  # routed through the trash path
     assert not (patched_claude_dir / "projects" / "-home-user-projA").exists()
 
 

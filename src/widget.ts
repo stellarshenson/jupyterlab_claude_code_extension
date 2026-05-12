@@ -33,7 +33,7 @@ export type PresentationMode = 'session' | 'folder' | 'path';
 const DEFAULT_PRESENTATION_MODE: PresentationMode = 'session';
 
 const SECTION_LABELS: Record<SectionKey, string> = {
-  favourites: 'Favourites',
+  favourites: 'Favorites',
   recent: 'Recent',
   all: 'All'
 };
@@ -724,7 +724,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
         const empty = document.createElement('div');
         empty.className = 'jp-ClaudeSessionsPanel-emptySection';
         empty.textContent =
-          key === 'favourites' ? 'No favourites yet.' : 'Empty.';
+          key === 'favourites' ? 'No favorites yet.' : 'Empty.';
         list.appendChild(empty);
       } else {
         for (const item of items) {
@@ -771,12 +771,12 @@ export class ClaudeCodeSessionsWidget extends Widget {
     name.textContent = this._lookupName(session);
     row.appendChild(name);
 
-    // No star in the Favourites section - every row there is a favourite
+    // No star in the Favorites section - every row there is a favorite
     // by definition; stars are an indicator only useful in Recent/All.
     if (session.favourite && sectionKey !== 'favourites') {
       const star = document.createElement('span');
       star.className = 'jp-ClaudeSessionsPanel-favStar';
-      star.title = 'Favourite';
+      star.title = 'Favorite';
       starFilledIcon.element({ container: star });
       row.appendChild(star);
     }
@@ -883,8 +883,8 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._commands.addCommand('claude-code-sessions:toggle-favourite', {
       label: () =>
         this._activeSession?.favourite
-          ? 'Remove from Favourites'
-          : 'Add to Favourites',
+          ? 'Remove from Favorites'
+          : 'Add to Favorites',
       execute: () => {
         if (this._activeSession) {
           void this._toggleFavourite(this._activeSession);

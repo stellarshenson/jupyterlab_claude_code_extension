@@ -189,9 +189,14 @@ class SessionFavouriteHandler(APIHandler):
 
 
 class SessionRemoveHandler(APIHandler):
-    """Permanently delete a project's Claude history.
+    """Remove a project's Claude history.
 
     Body: ``{"encoded_path": "-home-lab-foo"}``
+
+    Honours JupyterLab's ``ContentsManager.delete_to_trash`` setting: when
+    enabled the project folder is sent to the desktop trash, otherwise it is
+    deleted permanently (a permanent delete is also the fallback if the trash
+    move fails).
     """
 
     @tornado.web.authenticated
@@ -207,7 +212,10 @@ class SessionRemoveHandler(APIHandler):
             self.set_status(400)
             self.finish(json.dumps({"error": "invalid_body"}))
             return
-        ok = sessions_mod.remove_session(sessions_mod.claude_dir(), encoded_path)
+        to_trash = bool(getattr(self.contents_manager, "delete_to_trash", True))
+        ok = sessions_mod.remove_session(
+            sessions_mod.claude_dir(), encoded_path, to_trash=to_trash
+        )
         if not ok:
             self.set_status(400)
             self.finish(json.dumps({"error": "remove_failed"}))

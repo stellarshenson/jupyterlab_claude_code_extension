@@ -14,10 +14,10 @@ Browse, resume, and manage your Claude Code sessions from a JupyterLab side pane
 
 ## Features
 
-- **Three-section side panel** - Favourites, Recent, and All projects, each scrolling independently
+- **Three-section side panel** - Favorites, Recent, and All projects, each scrolling independently
 - **Live indicator** - a green dot marks sessions that are currently running somewhere
 - **One-click resume** - click a row to jump back into that session in a terminal. If a terminal for the project is already open, it's reused instead of duplicated
-- **Favourites** - star projects you keep coming back to via the right-click menu
+- **Favorites** - star projects you keep coming back to via the right-click menu
 - **Search** - fuzzy filter at the top of the panel
 - **Presentation modes** - label rows by session name, folder name, or path relative to the JupyterLab root
 - **Hover tooltip** with project path, last activity, message count, branch, and session id
