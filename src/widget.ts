@@ -1,7 +1,13 @@
 import { JupyterFrontEnd } from '@jupyterlab/application';
-import { Dialog, showDialog } from '@jupyterlab/apputils';
+import {
+  Clipboard,
+  Dialog,
+  Notification,
+  showDialog
+} from '@jupyterlab/apputils';
 import { ServerConnection } from '@jupyterlab/services';
 import { ITerminalTracker } from '@jupyterlab/terminal';
+import { terminalIcon } from '@jupyterlab/ui-components';
 import { CommandRegistry } from '@lumino/commands';
 import { Menu, Widget } from '@lumino/widgets';
 import { Message } from '@lumino/messaging';
@@ -947,6 +953,34 @@ export class ClaudeCodeSessionsWidget extends Widget {
       }
     });
 
+    this._commands.addCommand('claude-code-sessions:open-terminal', {
+      label: 'Open Terminal',
+      icon: terminalIcon,
+      execute: () => {
+        if (!this._activeSession) {
+          return;
+        }
+        // JupyterLab's built-in command - spawns a fresh pty with the user's
+        // shell at the given cwd. No claude, no waiter wrapper, no reuse;
+        // for when the user wants a plain shell at the project folder.
+        void this._app.commands.execute('terminal:create-new', {
+          cwd: this._activeSession.project_path
+        });
+      }
+    });
+
+    this._commands.addCommand('claude-code-sessions:copy-path', {
+      label: 'Copy Path',
+      execute: () => {
+        if (!this._activeSession) {
+          return;
+        }
+        const path = this._activeSession.project_path;
+        Clipboard.copyToSystem(path);
+        Notification.success(`Copied: ${path}`, { autoClose: 2000 });
+      }
+    });
+
     this._commands.addCommand('claude-code-sessions:remove', {
       label: 'Remove from Claude',
       icon: removeIcon,
@@ -964,8 +998,12 @@ export class ClaudeCodeSessionsWidget extends Widget {
       command: 'claude-code-sessions:resume-dangerous'
     });
     this._contextMenu.addItem({
+      command: 'claude-code-sessions:open-terminal'
+    });
+    this._contextMenu.addItem({
       command: 'claude-code-sessions:toggle-favourite'
     });
+    this._contextMenu.addItem({ command: 'claude-code-sessions:copy-path' });
     this._contextMenu.addItem({ type: 'separator' });
     this._contextMenu.addItem({ command: 'claude-code-sessions:remove' });
 

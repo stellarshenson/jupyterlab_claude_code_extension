@@ -1528,11 +1528,11 @@ __metadata:
   linkType: hard
 
 "@codemirror/legacy-modes@npm:^6.5.2":
-  version: 6.5.2
-  resolution: "@codemirror/legacy-modes@npm:6.5.2"
+  version: 6.5.3
+  resolution: "@codemirror/legacy-modes@npm:6.5.3"
   dependencies:
     "@codemirror/language": ^6.0.0
-  checksum: 2ae75e40d4357e65d0b3b1ebcb28a85a7700f8a39e5ae2dcc8dece00a4070a800d797c9297e7a4beb398d63e4c69c3e69992b4fb20ab84f748625c7590a82636
+  checksum: d3666c1cf45d63046363ce62588a911d81c5e0e3fe107eb0bad77243edbadccc156e5847fc0b184d485f973f4f4819f507d626c3c4ae8960f4609813df0b5dd6
   languageName: node
   linkType: hard
 
@@ -1568,14 +1568,14 @@ __metadata:
   linkType: hard
 
 "@codemirror/view@npm:^6.0.0, @codemirror/view@npm:^6.17.0, @codemirror/view@npm:^6.23.0, @codemirror/view@npm:^6.27.0, @codemirror/view@npm:^6.37.0, @codemirror/view@npm:^6.39.14, @codemirror/view@npm:^6.42.0":
-  version: 6.42.1
-  resolution: "@codemirror/view@npm:6.42.1"
+  version: 6.43.0
+  resolution: "@codemirror/view@npm:6.43.0"
   dependencies:
     "@codemirror/state": ^6.6.0
     crelt: ^1.0.6
     style-mod: ^4.1.0
     w3c-keyname: ^2.2.4
-  checksum: 765dfe130a3ca29de06797b31ddf897c841ce19d6027deefaa0e098710a0350e5e1a12dbf04b3559f8fdfb44f1388f6aa8bf571a36b1c66d579653dc76b050e3
+  checksum: c5731ec8504ab824b79a138a12dd50c32fca7819e5f6a08b374bb7c29903baa76d9eaf2c2deb1d423bc0bff6d4d3383389ee326e202283b1ca6827b4651ea8ec
   languageName: node
   linkType: hard
 
@@ -3664,11 +3664,11 @@ __metadata:
   linkType: hard
 
 "@types/node@npm:*":
-  version: 25.7.0
-  resolution: "@types/node@npm:25.7.0"
+  version: 25.8.0
+  resolution: "@types/node@npm:25.8.0"
   dependencies:
-    undici-types: ~7.21.0
-  checksum: d7cbd8ed9272e1baa9d90be7b4b3cdd0fb94c961ccbf4f5819863f24a6bd2d69cb839451c1d8e6043ed8d109a4281f0571c5fecb13407780d3cfd0cba1347807
+    undici-types: ">=7.24.0 <7.24.7"
+  checksum: 551b1e1e49d0a799235813d9f35201afdcddb5dc09c5b84832aae9f953ce419b24005d976058bac8a084cf525458e2406abe139659e4c4b2e1c8b5da153e196a
   languageName: node
   linkType: hard
 
@@ -5690,14 +5690,14 @@ __metadata:
   linkType: hard
 
 "dompurify@npm:^3.3.1":
-  version: 3.4.2
-  resolution: "dompurify@npm:3.4.2"
+  version: 3.4.3
+  resolution: "dompurify@npm:3.4.3"
   dependencies:
     "@types/trusted-types": ^2.0.7
   dependenciesMeta:
     "@types/trusted-types":
       optional: true
-  checksum: 2b1d3bdace712a27db9a23cde39357002cb1445a5966d6f320d66d75aefc22d796bdee8187eb512114870fdc45401e4bab04d1a0a1d0e3f40294c23d7784cbc4
+  checksum: 26364ee981b401c452fd50a3e2bd8f46871db49eb1f6b7206004dcbd35a73e0005ef9fb3aeafa7433975faa98ccfe81c891b3344a938236ab9faefb6af0897a3
   languageName: node
   linkType: hard
 
@@ -5743,9 +5743,9 @@ __metadata:
   linkType: hard
 
 "electron-to-chromium@npm:^1.5.328":
-  version: 1.5.353
-  resolution: "electron-to-chromium@npm:1.5.353"
-  checksum: d595c09753cd27d250e48dc4755dbe1f455721a8221897fe76b4d2686eb759e40bae2dc33127a71eeaf87afc56c3b49186988834b1df63026dc45e4bca953b9b
+  version: 1.5.356
+  resolution: "electron-to-chromium@npm:1.5.356"
+  checksum: e95838ebb9e2b76bbcfac17cbb7d8b3a646a77593f63eb1f596d7dbf7c895f7b10c6731159261d8f950b6e16db438789304d2191ddaee063bed167325dda7981
   languageName: node
   linkType: hard
 
@@ -7793,13 +7793,13 @@ __metadata:
   linkType: soft
 
 "katex@npm:^0.16.25":
-  version: 0.16.45
-  resolution: "katex@npm:0.16.45"
+  version: 0.16.46
+  resolution: "katex@npm:0.16.46"
   dependencies:
     commander: ^8.3.0
   bin:
     katex: cli.js
-  checksum: fe0a88485a1135268c2f1cc7d3dec8d124c85282a2d1184fed6728b729b2dcbcb738d73098cdfa87d120dd0657417ef818e4acc845c305c05f2fdec10910c1eb
+  checksum: 5aecd49b5f9422838557c20856dd074f14c055039b4b4dba186877a18931e604cb0d72b929622d0359c396392319452cfe97915d892e22ce880814dd08b151d2
   languageName: node
   linkType: hard
 
@@ -10131,10 +10131,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"undici-types@npm:~7.21.0":
-  version: 7.21.0
-  resolution: "undici-types@npm:7.21.0"
-  checksum: 9a178d1f5fa36767bb9f9b3e0f235bee2d6c679055a2c5192e906791da3696b49a90aa21228a7465d4aa49ba76c4a0a1b781912474d7f7c843a871a10dc1fc74
+"undici-types@npm:>=7.24.0 <7.24.7":
+  version: 7.24.6
+  resolution: "undici-types@npm:7.24.6"
+  checksum: e79802e37dc472c6324850d938b5df6b9e796f6a1bb5f8ccd24f3a6d17eae94a9cc125506c8b339a3293ffbad81daeba30b843e564c1d237b3c8deafd98b6267
   languageName: node
   linkType: hard
 
@@ -10673,8 +10673,8 @@ __metadata:
   linkType: hard
 
 "ws@npm:^8.11.0":
-  version: 8.20.0
-  resolution: "ws@npm:8.20.0"
+  version: 8.20.1
+  resolution: "ws@npm:8.20.1"
   peerDependencies:
     bufferutil: ^4.0.1
     utf-8-validate: ">=5.0.2"
@@ -10683,7 +10683,7 @@ __metadata:
       optional: true
     utf-8-validate:
       optional: true
-  checksum: 2b31d24a53690770564a033c21ea48390f84d23fbc5abc14b2bbec4e112846f2f3ca66caee769a73fb8bc89ba16b452a6911a553e9742bbc75bccb79e203953e
+  checksum: e639c83de2f58430a8f5d3ffea49711d37a766822e2e7ec8f131e5b890a95314203f1f83ee124de5c0185849907c9ab19db0210a723f2c03a99eaf448589d2f9
   languageName: node
   linkType: hard
 
