@@ -5138,9 +5138,9 @@ __metadata:
   linkType: hard
 
 "cytoscape@npm:^3.33.1":
-  version: 3.33.3
-  resolution: "cytoscape@npm:3.33.3"
-  checksum: 19186371a9afd540dd130efd8fca6ada2df375e691b018c0a4b73cb9c6d9c93126b23fa2699f550f6da36a0d0cac1bd943a7733e05022d240c2db47f235b14d1
+  version: 3.33.4
+  resolution: "cytoscape@npm:3.33.4"
+  checksum: c562ed369d9116d795ffc92257e87109624e7e370af5b5946ab23a317b6b626e078e179303d87b92d65c0ae95b494a3423e3dd618513f0a7bfc7e018d44886ce
   languageName: node
   linkType: hard
 
@@ -5785,12 +5785,12 @@ __metadata:
   linkType: hard
 
 "enhanced-resolve@npm:^5.20.0":
-  version: 5.21.4
-  resolution: "enhanced-resolve@npm:5.21.4"
+  version: 5.21.5
+  resolution: "enhanced-resolve@npm:5.21.5"
   dependencies:
     graceful-fs: ^4.2.4
     tapable: ^2.3.3
-  checksum: bf86032839b121c3853c1c03ab9e48e2ee487ac2e676670eb0bf317a26a9f17d4fa30b21f3b14d0e389b5002543d759a32afb78faab1ce15aebeb499423d5f2c
+  checksum: 6626d4e0cbb5fd4fc717f67f4b9c48384909450ea4e17d7983172226c4b61a50b7e5ccb652126917e3b0c5865d5d1ec617fea67f38f1fd80a030a1054295d4b1
   languageName: node
   linkType: hard
 
@@ -8357,7 +8357,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"nanoid@npm:^3.3.11":
+"nanoid@npm:^3.3.12":
   version: 3.3.12
   resolution: "nanoid@npm:3.3.12"
   bin:
@@ -8831,13 +8831,13 @@ __metadata:
   linkType: hard
 
 "postcss@npm:^8.3.11, postcss@npm:^8.4.28, postcss@npm:^8.4.33":
-  version: 8.5.14
-  resolution: "postcss@npm:8.5.14"
+  version: 8.5.15
+  resolution: "postcss@npm:8.5.15"
   dependencies:
-    nanoid: ^3.3.11
+    nanoid: ^3.3.12
     picocolors: ^1.1.1
     source-map-js: ^1.2.1
-  checksum: ec17d1519cd997b43aceb82bfa959f380085591269e286c53d5ba76eb1989525e7cde106a44f1565516fcbb50f206eb1858cc2cd5e5aaea3a8ee793886c8232c
+  checksum: 82e046d5bd0c537e7bcae1b97ec366968cac4ebdbd38773b69a2a4ad437f26641643a48f120317dd167199ac718ff8a0ab7dd102258430e4c919daaef0e57904
   languageName: node
   linkType: hard
 
