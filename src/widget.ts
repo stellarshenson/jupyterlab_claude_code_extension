@@ -7,7 +7,7 @@ import {
 } from '@jupyterlab/apputils';
 import { ServerConnection } from '@jupyterlab/services';
 import { ITerminalTracker } from '@jupyterlab/terminal';
-import { terminalIcon } from '@jupyterlab/ui-components';
+import { folderIcon, terminalIcon } from '@jupyterlab/ui-components';
 import { CommandRegistry } from '@lumino/commands';
 import { Menu, Widget } from '@lumino/widgets';
 import { Message } from '@lumino/messaging';
@@ -880,6 +880,22 @@ export class ClaudeCodeSessionsWidget extends Widget {
     return absolute;
   }
 
+  /** Path relative to the JupyterLab server root (``''`` for the root
+   * itself), or ``null`` when the folder lies outside the root - in which
+   * case the file browser has no way to address it. */
+  private _pathUnderRoot(absolute: string): string | null {
+    if (!this._rootDir) {
+      return null;
+    }
+    if (absolute === this._rootDir) {
+      return '';
+    }
+    if (absolute.startsWith(this._rootDir + '/')) {
+      return absolute.slice(this._rootDir.length + 1);
+    }
+    return null;
+  }
+
   private _formatRelativeTime(epochMs: number): string {
     if (!epochMs) {
       return 'unknown';
@@ -935,7 +951,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
     });
 
     this._commands.addCommand('claude-code-sessions:resume', {
-      label: 'Resume in Terminal',
+      label: 'Resume',
       execute: () => {
         if (this._activeSession) {
           void this._resumeInTerminal(this._activeSession);
@@ -965,6 +981,31 @@ export class ClaudeCodeSessionsWidget extends Widget {
         // for when the user wants a plain shell at the project folder.
         void this._app.commands.execute('terminal:create-new', {
           cwd: this._activeSession.project_path
+        });
+      }
+    });
+
+    this._commands.addCommand('claude-code-sessions:show-in-filebrowser', {
+      label: 'Show in File Browser',
+      icon: folderIcon,
+      execute: () => {
+        if (!this._activeSession) {
+          return;
+        }
+        const rel = this._pathUnderRoot(this._activeSession.project_path);
+        if (rel === null) {
+          // The file browser can only navigate within the JupyterLab server
+          // root; a project folder outside it has no addressable path there.
+          Notification.warning(
+            'Folder is outside the JupyterLab root - the file browser cannot show it.',
+            { autoClose: 4000 }
+          );
+          return;
+        }
+        // JL's built-in command navigates the default file browser to the
+        // path and reveals the browser panel.
+        void this._app.commands.execute('filebrowser:go-to-path', {
+          path: rel
         });
       }
     });
@@ -999,6 +1040,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
     });
     this._contextMenu.addItem({
       command: 'claude-code-sessions:open-terminal'
+    });
+    this._contextMenu.addItem({
+      command: 'claude-code-sessions:show-in-filebrowser'
     });
     this._contextMenu.addItem({
       command: 'claude-code-sessions:toggle-favourite'
