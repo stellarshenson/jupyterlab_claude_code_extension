@@ -61,7 +61,7 @@ under `/home/lab/workspace/.claude/skills/` and are also auto-discovered globall
 The local `Makefile` is sourced from a canonical workspace template:
 
 - Canonical path: `/home/lab/workspace/private/jupyterlab/@utils/jupyterlab-extensions/Makefile`
-- Current pinned version: **1.31** (matches local Makefile as of project initialization)
+- Current pinned version: **1.32** (project-local `.nodeenv`, guarded `install_dependencies`)
 
 **MANDATORY**: At the start of any session that touches build, install, release, or CI workflow
 work, check the canonical Makefile's version header (line 1: `# Makefile for Jupyterlab extensions
