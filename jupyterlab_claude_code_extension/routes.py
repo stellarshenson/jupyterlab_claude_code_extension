@@ -139,8 +139,13 @@ class StatusHandler(APIHandler):
     def get(self) -> None:
         binary = sessions_mod.claude_binary_available()
         # ``server_root_dir`` is the root path Jupyter is serving notebooks
-        # from. Fall back to the user's home directory if unset.
-        root_dir = self.settings.get("server_root_dir") or os.path.expanduser("~")
+        # from. Fall back to the user's home directory if unset. Expand a
+        # leading ``~`` - some deployments (e.g. JupyterHub) leave the
+        # setting as ``~/workspace``, and the frontend compares it against
+        # absolute session paths, so an unexpanded ``~`` never matches.
+        root_dir = os.path.expanduser(
+            self.settings.get("server_root_dir") or "~"
+        )
         self.finish(json.dumps({
             "enabled": binary is not None,
             "claude_path": binary,

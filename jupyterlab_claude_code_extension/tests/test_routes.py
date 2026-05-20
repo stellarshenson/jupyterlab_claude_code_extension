@@ -311,6 +311,9 @@ async def test_status_endpoint_returns_root_dir(jp_fetch, patched_claude_dir) ->
     payload = json.loads(response.body)
     assert isinstance(payload.get("root_dir"), str)
     assert payload["root_dir"]
+    # Must be an expanded absolute path - a leading "~" never matches the
+    # absolute session paths the frontend compares it against.
+    assert not payload["root_dir"].startswith("~")
 
 
 def test_session_state_by_cwd_returns_name_and_live_pid(fake_claude: Path) -> None:
