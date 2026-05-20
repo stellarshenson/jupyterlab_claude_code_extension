@@ -447,9 +447,10 @@ def test_resolve_latest_prefers_dir_consistent_jsonl_over_newer_stale_one(
 def test_resolve_latest_falls_back_to_newest_jsonl_cwd_when_none_match_dir(
     tmp_path: Path,
 ) -> None:
-    """If no JSONL's cwd encodes to the directory name (e.g. the folder was
-    deleted or moved elsewhere), fall back to the newest JSONL's recorded cwd
-    rather than a lossy decode of the encoded directory name."""
+    """If no JSONL's cwd encodes to the directory name AND no real directory
+    on disk encodes to it either (e.g. the folder was deleted or moved
+    elsewhere), fall back to the newest JSONL's recorded cwd rather than a
+    lossy decode of the encoded directory name."""
     root = tmp_path / ".claude"
     proj = root / "projects" / "-home-user-deleted-proj"
     proj.mkdir(parents=True)
@@ -460,6 +461,51 @@ def test_resolve_latest_falls_back_to_newest_jsonl_cwd_when_none_match_dir(
     assert rows[0]["project_path"] == "/home/user/some-other-place"
     assert rows[0]["name"] == "some-other-place"
     assert rows[0]["name_source"] == "basename"
+
+
+def test_resolve_latest_recovers_real_path_after_manual_rename(
+    tmp_path: Path,
+) -> None:
+    """When the user renames a project folder on disk AND the corresponding
+    ``~/.claude/projects/<encoded>`` directory to match, the JSONLs inside
+    still record the OLD cwd - none are consistent with the new dir name.
+    ``_resolve_latest`` should then fall back to a filesystem walk and pick
+    up the real (renamed) folder."""
+    renamed = tmp_path / "private" / "myproj_extension"
+    renamed.mkdir(parents=True)
+    encoded = sessions_mod._encode_path(str(renamed))  # mirrors Claude's encoding
+
+    root = tmp_path / ".claude"
+    proj = root / "projects" / encoded
+    proj.mkdir(parents=True)
+    old_cwd = str(tmp_path / "private" / "myproj")  # doesn't exist anymore
+    _jsonl(proj / "sess.jsonl", [old_cwd, old_cwd])
+
+    rows = sessions_mod.list_sessions(root)
+    assert len(rows) == 1
+    assert rows[0]["project_path"] == str(renamed)
+    assert rows[0]["name"] == "myproj_extension"
+    assert rows[0]["session_id"] == "sess"
+
+
+def test_find_path_matching_encoded_walks_filesystem(tmp_path: Path) -> None:
+    """Direct unit check of the recovery helper: it should find a real
+    directory whose absolute path encodes (per ``_encode_path``) to the
+    given encoded name, even when the basename mixes ``_`` and ``-``."""
+    target = tmp_path / "private" / "jupyterlab" / "my_proj-with_extension"
+    target.mkdir(parents=True)
+    encoded = sessions_mod._encode_path(str(target))
+    assert sessions_mod._find_path_matching_encoded(encoded) == str(target)
+
+
+def test_find_path_matching_encoded_returns_none_when_no_match(
+    tmp_path: Path,
+) -> None:
+    """A name that doesn't correspond to any real directory on disk yields
+    ``None`` so the caller can fall back to the JSONL-recorded cwd."""
+    # Pure-fiction encoded name under tmp_path that no real dir matches.
+    bogus = sessions_mod._encode_path(str(tmp_path / "no" / "such" / "thing"))
+    assert sessions_mod._find_path_matching_encoded(bogus) is None
 
 
 def test_index_original_path_overridden_when_inconsistent_with_dir(

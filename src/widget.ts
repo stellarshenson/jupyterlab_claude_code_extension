@@ -977,11 +977,21 @@ export class ClaudeCodeSessionsWidget extends Widget {
           return;
         }
         // JupyterLab's built-in command - spawns a fresh pty with the user's
-        // shell at the given cwd. No claude, no waiter wrapper, no reuse;
-        // for when the user wants a plain shell at the project folder.
-        void this._app.commands.execute('terminal:create-new', {
-          cwd: this._activeSession.project_path
-        });
+        // shell at the given cwd. The cwd argument is interpreted by the
+        // server as a path *relative to the contents manager root*, not an
+        // absolute filesystem path - so we translate via _pathUnderRoot,
+        // matching the Show in File Browser handling. No claude, no waiter
+        // wrapper, no reuse; for when the user wants a plain shell at the
+        // project folder.
+        const rel = this._pathUnderRoot(this._activeSession.project_path);
+        if (rel === null) {
+          Notification.warning(
+            'Folder is outside the JupyterLab root - cannot open a terminal there.',
+            { autoClose: 4000 }
+          );
+          return;
+        }
+        void this._app.commands.execute('terminal:create-new', { cwd: rel });
       }
     });
 

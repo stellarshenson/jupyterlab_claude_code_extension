@@ -174,8 +174,16 @@ def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
             chosen, chosen_cwd = jsonl, cwd
             break
     if chosen is None:
+        # No JSONL records a cwd that encodes to this directory name. That
+        # happens when the user renamed both a project folder on disk AND
+        # the encoded ``~/.claude/projects/<...>`` dir to match, after the
+        # JSONLs were written - the old cwd inside them no longer exists.
+        # Fall back to a filesystem walk that finds a real directory whose
+        # path encodes to the dir name; that's the new project path. Only
+        # if even that fails do we accept the JSONL's stale cwd.
+        fs_path = _find_path_matching_encoded(dirname)
         chosen = jsonls[0]
-        chosen_cwd = _jsonl_cwd(chosen)
+        chosen_cwd = fs_path or _jsonl_cwd(chosen)
 
     sid = chosen.stem
     fs_mtime = int(chosen.stat().st_mtime * 1000)
@@ -294,6 +302,61 @@ def _encode_path(path: str) -> str:
         else:
             out.append(ch)
     return "".join(out)
+
+
+def _encode_segment(name: str) -> str:
+    """Per-segment variant of ``_encode_path`` (no ``/`` to replace)."""
+    return "".join("-" if ch in ("_", ".") else ch for ch in name)
+
+
+_DECODE_MAX_DEPTH = 20
+
+
+def _find_path_matching_encoded(
+    encoded_dir_name: str, root: str = "/"
+) -> str | None:
+    """Walk the filesystem from ``root`` looking for a real directory whose
+    absolute path encodes (per ``_encode_path``) to ``encoded_dir_name``.
+
+    Used to recover a real cwd when the user has renamed a project folder
+    on disk AND the corresponding ``~/.claude/projects/<encoded>`` directory
+    to match - none of the JSONLs inside carry the new path because they
+    pre-date the rename. The encoded name uses ``-`` as both the path
+    separator and as the replacement for ``_``, ``.``, and literal ``-``,
+    so a single segment can split many ways - we try the longest split
+    first at each step and recurse, taking the first existing match.
+    """
+    parts = encoded_dir_name.lstrip("-").split("-")
+    if not parts or not all(parts):
+        return None
+    return _walk_decode(Path(root), parts, 0)
+
+
+def _walk_decode(current: Path, remaining: list[str], depth: int) -> str | None:
+    if not remaining:
+        return str(current)
+    if depth >= _DECODE_MAX_DEPTH:
+        return None
+    try:
+        children = list(current.iterdir())
+    except (OSError, PermissionError):
+        return None
+    # Try longest match first: a child like ``jupyterlab_drag_and_drop_path``
+    # consumes many remaining tokens at once, beating any partial prefix.
+    for k in range(len(remaining), 0, -1):
+        target = "-".join(remaining[:k])
+        for child in children:
+            if not child.is_dir():
+                continue
+            try:
+                if _encode_segment(child.name) != target:
+                    continue
+            except OSError:
+                continue
+            result = _walk_decode(child, remaining[k:], depth + 1)
+            if result is not None:
+                return result
+    return None
 
 
 def _decode_dirname(name: str) -> str:
