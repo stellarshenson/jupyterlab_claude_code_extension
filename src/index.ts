@@ -9,7 +9,7 @@ import { ITerminalTracker } from '@jupyterlab/terminal';
 
 import { requestAPI } from './request';
 import { IStatusResponse } from './types';
-import { ClaudeCodeSessionsWidget, PresentationMode } from './widget';
+import { ClaudeCodeSessionsWidget } from './widget';
 
 const PLUGIN_ID = 'jupyterlab_claude_code_extension:plugin';
 const WIDGET_ID = 'jupyterlab-claude-code-extension';
@@ -69,9 +69,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
         const apply = (): void => {
           const mode = settings.get('presentationMode').composite as string;
-          if (mode === 'session' || mode === 'folder' || mode === 'path') {
-            widget.setPresentationMode(mode as PresentationMode);
-          }
+          // 'session' was a pre-1.1.8 mode that pulled labels from the
+          // session's `name` field; we now ignore that field entirely, so
+          // any value other than 'path' is treated as 'folder'.
+          widget.setPresentationMode(mode === 'path' ? 'path' : 'folder');
           const limit = settings.get('recentLimit').composite as number;
           if (typeof limit === 'number') {
             widget.setRecentLimit(limit);

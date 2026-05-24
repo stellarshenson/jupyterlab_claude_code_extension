@@ -8,9 +8,9 @@
     "presentationMode": {
       "type": "string",
       "title": "Presentation mode",
-      "description": "How session rows are labelled. `session` (default) shows the user-set session name from /rename, falling back to the project folder name. `folder` always shows the project folder name. `path` shows the project path relative to the JupyterLab notebook root (absolute if outside it).",
-      "enum": ["session", "folder", "path"],
-      "default": "session"
+      "description": "How session rows are labelled. `folder` (default) shows the project folder name, walking up the path to disambiguate when two projects share a basename. `path` shows the project path relative to the JupyterLab notebook root (absolute if outside it). The earlier `session` mode that pulled labels from Claude's session name field was removed in 1.1.8 - that field mixed user `/rename` values and Claude's auto-derived topics with no way to tell them apart.",
+      "enum": ["folder", "path"],
+      "default": "folder"
     },
     "recentLimit": {
       "type": "integer",

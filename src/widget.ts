@@ -34,9 +34,9 @@ const EXPANDED_STORAGE_KEY = 'jupyterlab_claude_code_extension:expanded';
 
 type SectionKey = 'favourites' | 'recent' | 'all';
 
-export type PresentationMode = 'session' | 'folder' | 'path';
+export type PresentationMode = 'folder' | 'path';
 
-const DEFAULT_PRESENTATION_MODE: PresentationMode = 'session';
+const DEFAULT_PRESENTATION_MODE: PresentationMode = 'folder';
 
 const SECTION_LABELS: Record<SectionKey, string> = {
   favourites: 'Favorites',
@@ -585,19 +585,14 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
   // -------------------------------------------------------------- rendering
 
-  /** Apply the presentation-mode setting (path-segment disambiguation is
-   * handled separately in ``_disambiguate``). */
+  /** Apply the presentation-mode setting (basename collisions for folder
+   * mode are resolved separately in ``_disambiguate``). */
   private _displayName(s: ISession): string {
     const folder = this._basename(s.project_path) || s.encoded_path;
-    switch (this._presentationMode) {
-      case 'folder':
-        return folder;
-      case 'path':
-        return this._displayPath(s.project_path) || folder;
-      case 'session':
-      default:
-        return s.name || folder;
+    if (this._presentationMode === 'path') {
+      return this._displayPath(s.project_path) || folder;
     }
+    return folder;
   }
 
   private _basename(p: string): string {
@@ -609,13 +604,10 @@ export class ClaudeCodeSessionsWidget extends Widget {
   }
 
   /** Walk path tails until every name in a colliding group is unique.
-   *
-   * User-set rename names (``name_source === 'rename'``) survive
-   * disambiguation untouched: a Claude ``/rename`` should never be rolled
-   * back to a path tail just because some other row happens to share its
-   * folder basename. Basename-derived rows in the same group get the path
-   * tail suffix, picked so it stays distinct from every rename label too.
-   */
+   * Folder-mode labels are folder basenames, so two different projects can
+   * end up with the same label (e.g. two `datascience` folders under
+   * different parents); we extend each colliding label with as much of its
+   * parent path as it takes to make it unique. */
   private _disambiguate(rows: ISession[]): Map<string, string> {
     const out = new Map<string, string>();
     const groups = new Map<string, ISession[]>();
@@ -628,43 +620,24 @@ export class ClaudeCodeSessionsWidget extends Widget {
         out.set(group[0].project_path, name);
         continue;
       }
-
-      const renames = group.filter(r => r.name_source === 'rename');
-      const basenames = group.filter(r => r.name_source !== 'rename');
-
-      // Rename rows win unchanged. The ``taken`` set guards basename
-      // disambiguation from colliding back into a rename's label.
-      const taken = new Set<string>();
-      for (const r of renames) {
-        out.set(r.project_path, r.name);
-        taken.add(r.name);
-      }
-      if (basenames.length === 0) {
-        continue;
-      }
-
-      // Walk path tails for basename rows: tail must be unique among
-      // basenames AND not equal to any rename label already taken.
-      const segs = basenames.map(r =>
-        r.project_path.split('/').filter(Boolean)
-      );
+      const segs = group.map(r => r.project_path.split('/').filter(Boolean));
       const max = Math.max(...segs.map(s => s.length));
       let depth = 1;
       let resolved = false;
       while (depth <= max) {
         const tails = segs.map(s => s.slice(-depth).join('/'));
-        const unique = new Set(tails).size === tails.length;
-        const noConflict = tails.every(t => !taken.has(t));
-        if (unique && noConflict) {
-          basenames.forEach((r, i) => out.set(r.project_path, tails[i]));
+        if (new Set(tails).size === tails.length) {
+          group.forEach((r, i) => out.set(r.project_path, tails[i]));
           resolved = true;
           break;
         }
         depth += 1;
       }
       if (!resolved) {
-        // Fallback to absolute path
-        basenames.forEach(r => out.set(r.project_path, r.project_path));
+        // Identical project_path values across rows shouldn't happen
+        // (list_sessions dedups by path) but if it ever does, fall back to
+        // the absolute path so rows stay distinguishable.
+        group.forEach(r => out.set(r.project_path, r.project_path));
       }
     }
     return out;

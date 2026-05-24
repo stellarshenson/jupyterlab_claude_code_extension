@@ -151,158 +151,48 @@ def test_remote_control_flag_uses_live_pids(fake_claude: Path) -> None:
     assert rows["/home/user/projB"]["remote_control"] is False
 
 
-def test_rename_from_pid_session_file(fake_claude: Path) -> None:
-    sessions_dir = fake_claude / "sessions"
-    sessions_dir.mkdir()
-    (sessions_dir / "100.json").write_text(json.dumps({
-        "pid": 100, "sessionId": "s", "cwd": "/home/user/projA",
-        "startedAt": 1000, "updatedAt": 2000, "name": "Renamed projA",
-    }))
-    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
-    # Rename overrides the index summary
-    assert rows["/home/user/projA"]["name"] == "Renamed projA"
-
-
-def test_rename_picks_latest_updated_at(fake_claude: Path) -> None:
-    """When multiple pid files share the same (consistent /rename) name,
-    metadata still comes from the record with the highest ``updatedAt``."""
-    sessions_dir = fake_claude / "sessions"
-    sessions_dir.mkdir()
-    (sessions_dir / "100.json").write_text(json.dumps({
-        "pid": 100, "sessionId": "s", "cwd": "/home/user/projA",
-        "startedAt": 1000, "updatedAt": 2000, "name": "Renamed",
-    }))
-    (sessions_dir / "200.json").write_text(json.dumps({
-        "pid": 200, "sessionId": "s", "cwd": "/home/user/projA",
-        "startedAt": 1500, "updatedAt": 5000, "name": "Renamed",
-    }))
-    state = sessions_mod.session_state_by_cwd(fake_claude)
-    assert state["/home/user/projA"]["name"] == "Renamed"
-    assert state["/home/user/projA"]["updated_at"] == 5000
-
-
-def test_backend_returns_bare_names(fake_claude: Path) -> None:
-    """Disambiguation moved to the frontend; backend returns bare names."""
-    sessions_dir = fake_claude / "sessions"
-    sessions_dir.mkdir()
-    (sessions_dir / "100.json").write_text(json.dumps({
-        "pid": 100, "sessionId": "a", "cwd": "/home/user/projA",
-        "updatedAt": 1, "name": "shared",
-    }))
-    (sessions_dir / "200.json").write_text(json.dumps({
-        "pid": 200, "sessionId": "b", "cwd": "/home/user/projB",
-        "updatedAt": 1, "name": "shared",
-    }))
-    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
-    # No "(suffix)" added at the backend
-    assert rows["/home/user/projA"]["name"] == "shared"
-    assert rows["/home/user/projB"]["name"] == "shared"
-
-
-def test_name_source_is_rename_when_pid_file_carries_name(
+def test_pid_file_name_field_is_ignored_label_is_folder_basename(
     fake_claude: Path,
 ) -> None:
-    """When a pid.json file supplies the row's name via a stable /rename,
-    the row carries ``name_source == 'rename'`` so the frontend can keep
-    that label intact during display-name disambiguation."""
+    """The pid file's ``name`` field is intentionally ignored as of 1.1.8 -
+    Claude writes both ``/rename`` values and its own auto-derived topic
+    names there with no way to tell them apart, so the panel labels rows
+    from the folder name (with path-tail disambiguation in the frontend
+    when basenames collide). ``state`` no longer carries ``name``; row
+    labels are basenames and ``name_source`` is always ``"basename"``."""
     sessions_dir = fake_claude / "sessions"
     sessions_dir.mkdir()
     (sessions_dir / "100.json").write_text(json.dumps({
         "pid": 100, "sessionId": "a", "cwd": "/home/user/projA",
-        "updatedAt": 1, "name": "court-cases",
+        "updatedAt": 1, "name": "court-cases",  # ignored
     }))
+    state = sessions_mod.session_state_by_cwd(fake_claude)
+    assert "name" not in state["/home/user/projA"]
+    assert state["/home/user/projA"]["session_id"] == "a"
     rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
-    assert rows["/home/user/projA"]["name"] == "court-cases"
-    assert rows["/home/user/projA"]["name_source"] == "rename"
-    # Project B and C have no pid.json with a /rename - they fall back to
-    # the folder basename and should be marked as basename-sourced.
+    assert rows["/home/user/projA"]["name"] == "projA"
+    assert rows["/home/user/projA"]["name_source"] == "basename"
+    # Every other row in the fixture is also basename-sourced.
     assert rows["/home/user/projB"]["name_source"] == "basename"
     assert rows["/home/user/projC"]["name_source"] == "basename"
 
 
-def test_latest_pid_name_wins(fake_claude: Path) -> None:
-    """When several pid files for the same cwd carry different ``name``
-    values, the one with the highest ``updatedAt`` is used verbatim - we no
-    longer second-guess whether a name is a /rename or a Claude topic."""
+def test_session_state_picks_latest_updated_at(fake_claude: Path) -> None:
+    """When multiple pid files share a cwd, the record with the highest
+    ``updatedAt`` wins (used for live_pid / session_id resolution)."""
     sessions_dir = fake_claude / "sessions"
     sessions_dir.mkdir()
     (sessions_dir / "100.json").write_text(json.dumps({
-        "pid": 100, "sessionId": "S1", "cwd": "/home/user/projA",
-        "updatedAt": 100, "name": "topic-one",
+        "pid": 100, "sessionId": "older", "cwd": "/home/user/projA",
+        "startedAt": 1000, "updatedAt": 2000,
     }))
     (sessions_dir / "200.json").write_text(json.dumps({
-        "pid": 200, "sessionId": "S1", "cwd": "/home/user/projA",
-        "updatedAt": 200, "name": "topic-two",
+        "pid": 200, "sessionId": "newer", "cwd": "/home/user/projA",
+        "startedAt": 1500, "updatedAt": 5000,
     }))
     state = sessions_mod.session_state_by_cwd(fake_claude)
-    assert state["/home/user/projA"]["name"] == "topic-two"
-    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
-    assert rows["/home/user/projA"]["name"] == "topic-two"
-    assert rows["/home/user/projA"]["name_source"] == "rename"
-
-
-def test_consistent_name_kept(fake_claude: Path) -> None:
-    """Multiple pid files for the same sessionId all sharing the same
-    ``name`` - that name is what the panel shows."""
-    sessions_dir = fake_claude / "sessions"
-    sessions_dir.mkdir()
-    for pid, ts in ((100, 100), (200, 200), (300, 300)):
-        (sessions_dir / f"{pid}.json").write_text(json.dumps({
-            "pid": pid, "sessionId": "S2", "cwd": "/home/user/projA",
-            "updatedAt": ts, "name": "renamed",
-        }))
-    state = sessions_mod.session_state_by_cwd(fake_claude)
-    assert state["/home/user/projA"]["name"] == "renamed"
-
-
-def test_kebab_topic_name_used_verbatim(fake_claude: Path) -> None:
-    """A 3+ token lowercase-kebab name (which the old heuristic dropped as
-    "looks auto-generated") is now used as-is - this is exactly the shape a
-    ``/rename`` like ``graph-engine-kpi`` takes."""
-    sessions_dir = fake_claude / "sessions"
-    sessions_dir.mkdir()
-    (sessions_dir / "100.json").write_text(json.dumps({
-        "pid": 100, "sessionId": "S", "cwd": "/home/user/projA",
-        "updatedAt": 1, "name": "graph-engine-kpi",
-    }))
-    state = sessions_mod.session_state_by_cwd(fake_claude)
-    assert state["/home/user/projA"]["name"] == "graph-engine-kpi"
-    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
-    assert rows["/home/user/projA"]["name"] == "graph-engine-kpi"
-    assert rows["/home/user/projA"]["name_source"] == "rename"
-
-
-def test_two_token_name_kept_as_rename(fake_claude: Path) -> None:
-    sessions_dir = fake_claude / "sessions"
-    sessions_dir.mkdir()
-    (sessions_dir / "100.json").write_text(json.dumps({
-        "pid": 100, "sessionId": "S", "cwd": "/home/user/projA",
-        "updatedAt": 1, "name": "court-cases",
-    }))
-    state = sessions_mod.session_state_by_cwd(fake_claude)
-    assert state["/home/user/projA"]["name"] == "court-cases"
-
-
-def test_underscore_name_kept_as_rename(fake_claude: Path) -> None:
-    sessions_dir = fake_claude / "sessions"
-    sessions_dir.mkdir()
-    (sessions_dir / "100.json").write_text(json.dumps({
-        "pid": 100, "sessionId": "S", "cwd": "/home/user/projA",
-        "updatedAt": 1, "name": "jupyterlab_export_markdown_extension",
-    }))
-    state = sessions_mod.session_state_by_cwd(fake_claude)
-    assert state["/home/user/projA"]["name"] == "jupyterlab_export_markdown_extension"
-
-
-def test_capitalized_kebab_name_kept_as_rename(fake_claude: Path) -> None:
-    sessions_dir = fake_claude / "sessions"
-    sessions_dir.mkdir()
-    (sessions_dir / "100.json").write_text(json.dumps({
-        "pid": 100, "sessionId": "S", "cwd": "/home/user/projA",
-        "updatedAt": 1, "name": "My-Cool-Project",
-    }))
-    state = sessions_mod.session_state_by_cwd(fake_claude)
-    assert state["/home/user/projA"]["name"] == "My-Cool-Project"
+    assert state["/home/user/projA"]["updated_at"] == 5000
+    assert state["/home/user/projA"]["session_id"] == "newer"
 
 
 async def test_status_endpoint_returns_root_dir(jp_fetch, patched_claude_dir) -> None:
@@ -316,15 +206,15 @@ async def test_status_endpoint_returns_root_dir(jp_fetch, patched_claude_dir) ->
     assert not payload["root_dir"].startswith("~")
 
 
-def test_session_state_by_cwd_returns_name_and_live_pid(fake_claude: Path) -> None:
+def test_session_state_by_cwd_returns_live_pid_and_session_id(fake_claude: Path) -> None:
     sessions_dir = fake_claude / "sessions"
     sessions_dir.mkdir()
     (sessions_dir / "1.json").write_text(json.dumps({
         "pid": 1, "sessionId": "live-sid", "cwd": "/some/cwd",
-        "updatedAt": 100, "name": "Hello",
+        "updatedAt": 100, "name": "Hello",  # name field is ignored on read
     }))
     state = sessions_mod.session_state_by_cwd(fake_claude)
-    assert state["/some/cwd"]["name"] == "Hello"
+    assert "name" not in state["/some/cwd"]
     assert state["/some/cwd"]["live_pid"] == 1
     assert state["/some/cwd"]["session_id"] == "live-sid"
 
@@ -571,31 +461,6 @@ def test_resolve_latest_recognises_underscore_in_cwd(tmp_path: Path) -> None:
     assert len(rows) == 1
     assert rows[0]["project_path"] == "/home/user/my_proj"
     assert rows[0]["name"] == "my_proj"
-
-
-def test_rename_retrieved_when_pid_file_keyed_on_current_path(tmp_path: Path) -> None:
-    """A ``/rename`` is surfaced when a ``~/.claude/sessions/<pid>.json`` for
-    the session carries the *current* cwd - the path the resolver settles on."""
-    root = tmp_path / ".claude"
-    proj = root / "projects" / "-home-user-litigation-timeline"
-    proj.mkdir(parents=True)
-    _jsonl(
-        proj / "sess-1.jsonl",
-        ["/home/user/2025-12_pozb", "/home/user/litigation-timeline"],
-    )
-    sessions_dir = root / "sessions"
-    sessions_dir.mkdir()
-    (sessions_dir / "7.json").write_text(json.dumps({
-        "pid": 7, "sessionId": "sess-1",
-        "cwd": "/home/user/litigation-timeline",
-        "updatedAt": 10, "name": "court-cases",
-    }))
-
-    rows = sessions_mod.list_sessions(root)
-    assert len(rows) == 1
-    assert rows[0]["project_path"] == "/home/user/litigation-timeline"
-    assert rows[0]["name"] == "court-cases"
-    assert rows[0]["name_source"] == "rename"
 
 
 def test_scan_jsonl_for_latest_cwd_reads_tail_of_large_file(tmp_path: Path) -> None:
