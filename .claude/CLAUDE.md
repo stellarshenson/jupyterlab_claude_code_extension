@@ -61,7 +61,7 @@ under `/home/lab/workspace/.claude/skills/` and are also auto-discovered globall
 The local `Makefile` is sourced from a canonical workspace template:
 
 - Canonical path: `/home/lab/workspace/private/jupyterlab/@utils/jupyterlab-extensions/Makefile`
-- Current pinned version: **1.32** (project-local `.nodeenv` on `--node=lts`, guarded `install_dependencies`). Note: building on Node 24+ requires `license-webpack-plugin` 4.x (pinned via `resolutions` in `package.json`); the older 2.x pulled by `@jupyterlab/builder` crashes on Node 24+
+- Current pinned version: **1.32** (project-local `.nodeenv` on `--node=lts`, guarded `install_dependencies`). Note: `webpack` is pinned to `5.106.0` via both `resolutions` and `overrides` in `package.json`. webpack `>= 5.106.1` changed its module-federation share identifier from `name@version = request` to `name@version|request`, which crashes the unmaintained `license-webpack-plugin` (it parses with `split('=')[1].trim()`) that `@jupyterlab/builder` injects into every production build. This is a webpack-version issue, not a Node-version issue. `chalk` is also pinned to `4.1.2` (same two fields) to dedupe a duplicate `chalk@2.4.2` that `duplicate-package-checker-webpack-plugin` drags in and that crashes the build-isolation production build on Node 24+. See the `jupyterlab-extension` skill for the full root cause of both pins
 
 **MANDATORY**: At the start of any session that touches build, install, release, or CI workflow
 work, check the canonical Makefile's version header (line 1: `# Makefile for Jupyterlab extensions
