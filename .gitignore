@@ -134,3 +134,7 @@ junit.xml
 # article-writer DB symlink to the workspace-level store (also matches the
 # symlink itself, not just a real directory)
 .article_writer
+
+# build/run logs and accidental uv lockfile
+logs/
+uv.lock
