@@ -1,10 +1,5 @@
-# Makefile for Jupyterlab extensions version 1.33
+# Makefile for Jupyterlab extensions version 1.32
 # changelog:
-#   1.33 - pin the project-local nodeenv to Node $(NODE_VERSION) instead of `lts`.
-#          `lts` now resolves to Node 24, and license-webpack-plugin (pulled by
-#          @jupyterlab/builder) crashes during the production webpack build on
-#          Node >= 24 ("Cannot read properties of undefined (reading 'trim')").
-#          Node 22 is the newest line the current toolchain builds cleanly on.
 #   1.32 - use a project-local nodeenv at .nodeenv/ instead of overwriting the python
 #          prefix via `nodeenv -p` (which used to fail with "Text file busy" when the
 #          existing node binary was held open). PATH=.nodeenv/bin:$PATH is exported so
@@ -21,24 +16,9 @@
 .PHONY: build install clean uninstall publish dependencies mrproper increment_version install_dependencies check_dependencies upgrade help test
 .DEFAULT_GOAL := help
 
-# =====================================================================
-# Configuration
-# =====================================================================
-
-# Node version for the project-local nodeenv. Pinned on purpose: `lts` now
-# resolves to Node 24, which breaks the production webpack build
-# (license-webpack-plugin crashes with "reading 'trim'"). Node 22 is the
-# newest line the current toolchain builds cleanly on. Override per-invocation
-# with `make <target> NODE_VERSION=X.Y.Z` and `rm -rf .nodeenv` to rebuild.
-NODE_VERSION ?= 22.22.3
-
-# Where the project-local node/npm/yarn live. Created by install_dependencies,
-# removed by mrproper. Never installed into the python prefix.
-NODEENV ?= $(CURDIR)/.nodeenv
-
-# =====================================================================
-
-# Make every recipe transparently pick up the pinned local toolchain first.
+# Project-local node environment - keeps node/npm/yarn pinned per project and out of
+# the python prefix. Created by `install_dependencies` and torn down by `mrproper`.
+NODEENV := $(CURDIR)/.nodeenv
 export PATH := $(NODEENV)/bin:$(PATH)
 
 # Read current version from package.json (only if node is available)
@@ -110,9 +90,9 @@ install_dependencies:
 		pip install twine; \
 	fi
 	@if [ ! -x "$(NODEENV)/bin/node" ] || [ ! -x "$(NODEENV)/bin/npm" ]; then \
-		echo "Creating project-local node environment (Node $(NODE_VERSION)) at $(NODEENV)..."; \
+		echo "Creating project-local node environment at $(NODEENV)..."; \
 		python -c "import nodeenv" >/dev/null 2>&1 || pip install nodeenv; \
-		nodeenv --node=$(NODE_VERSION) --prebuilt "$(NODEENV)"; \
+		nodeenv --node=lts --prebuilt "$(NODEENV)"; \
 	fi
 	@if [ ! -x "$(NODEENV)/bin/yarn" ]; then \
 		echo "Installing yarn + rimraf into $(NODEENV)..."; \
