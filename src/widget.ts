@@ -1001,7 +1001,6 @@ export class ClaudeCodeSessionsWidget extends Widget {
         }
         const path = this._activeSession.project_path;
         Clipboard.copyToSystem(path);
-        Notification.success(`Copied: ${path}`, { autoClose: 2000 });
       }
     });
 
