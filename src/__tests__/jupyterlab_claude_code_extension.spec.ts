@@ -1,3 +1,10 @@
+declare const __dirname: string;
+declare function require(name: string): any;
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const fs: { readFileSync: (p: string, enc: string) => string } = require('fs');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const path: { join: (...args: string[]) => string } = require('path');
+
 import type { ISession } from '../types';
 
 const session = (over: Partial<ISession> = {}): ISession => ({
@@ -59,5 +66,31 @@ describe('session sorting', () => {
     expect(recent).toHaveLength(10);
     expect(recent[0].project_path).toBe('p24');
     expect(recent[9].project_path).toBe('p15');
+  });
+});
+
+/**
+ * Regression guard for 1.1.13 -> 1.1.14: the launch-spinner Dialog is
+ * constructed with ``buttons: []`` so ``Dialog.resolve()`` has no button
+ * to "click" and silently no-ops, leaving the modal stuck over the
+ * panel. The dismiss call in ``_doResumeInTerminal``'s ``finally`` MUST
+ * be ``spinner.dispose()``. These are source-level invariants - cheap,
+ * deterministic, and exactly the contract that broke in 1.1.13.
+ */
+describe('launch spinner dismiss contract', () => {
+  const widgetSrc: string = fs.readFileSync(
+    path.join(__dirname, '..', 'widget.ts'),
+    'utf-8'
+  );
+
+  it('_doResumeInTerminal dismisses spinner via dispose(), not resolve()', () => {
+    expect(widgetSrc).toMatch(/spinner\.dispose\(\)/);
+    expect(widgetSrc).not.toMatch(/spinner\.resolve\(\)/);
+  });
+
+  it('_showLaunchSpinner constructs Dialog with buttons:[]', () => {
+    // The empty buttons array is the reason resolve() no-ops; if this
+    // ever becomes non-empty, the dismiss call can revisit resolve().
+    expect(widgetSrc).toMatch(/_showLaunchSpinner[\s\S]*?buttons:\s*\[\]/);
   });
 });
