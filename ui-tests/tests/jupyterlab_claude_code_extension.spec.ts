@@ -63,45 +63,32 @@ test('launch spinner dialog must be dismissable via dispose()', async ({
 
   await page.goto();
 
-  // Bring the Claude Sessions panel to the foreground. ``activateById``
-  // is the labShell entry point; the id is set in widget.ts.
-  await page.evaluate(() => {
-    const app: any = (globalThis as any).jupyterapp;
-    app.shell.activateById('jupyterlab-claude-code-extension');
+  // Wait for the panel's DOM node to exist - this only happens once the
+  // extension's async ``activate()`` has finished awaiting ``/status``
+  // and called ``labShell.add(widget, ...)``. Lumino sets the side-stack
+  // container's id to the widget id, so ``#jupyterlab-claude-code-extension``
+  // becomes a stable readiness signal that the panel is registered.
+  await page.waitForSelector('#jupyterlab-claude-code-extension', {
+    state: 'attached',
+    timeout: 15000
   });
 
-  // Walk the lab shell to find our widget. The id was set in
-  // widget.ts:110. Once located, drive ``_showLaunchSpinner`` directly
-  // and stash the Dialog handle on ``window`` so we can dispose it from
-  // a second evaluate call. This mirrors the exact try/finally pattern
+  // Drive ``_showLaunchSpinner`` directly off the registered widget
+  // instance and stash the returned Dialog on ``window`` so a second
+  // evaluate can dispose it. This mirrors the exact try/finally pattern
   // in ``_doResumeInTerminal``.
-  await page.waitForFunction(
-    () => {
-      const app: any = (globalThis as any).jupyterapp;
-      if (!app?.shell?.widgets) {
-        return false;
-      }
-      for (const area of ['left', 'right']) {
-        for (const w of app.shell.widgets(area)) {
-          if (w.id === 'jupyterlab-claude-code-extension') {
-            return true;
-          }
-        }
-      }
-      return false;
-    },
-    null,
-    { timeout: 10000 }
-  );
-
   await page.evaluate(() => {
-    const app: any = (globalThis as any).jupyterapp;
+    const app: any = (window as any).jupyterapp;
     let panel: any = null;
     for (const area of ['left', 'right']) {
-      for (const w of app.shell.widgets(area)) {
-        if (w.id === 'jupyterlab-claude-code-extension') {
-          panel = w;
-          break;
+      const it = app.shell.widgets(area);
+      const widgets = typeof it[Symbol.iterator] === 'function' ? it : null;
+      if (widgets) {
+        for (const w of widgets) {
+          if (w.id === 'jupyterlab-claude-code-extension') {
+            panel = w;
+            break;
+          }
         }
       }
       if (panel) {
@@ -109,9 +96,9 @@ test('launch spinner dialog must be dismissable via dispose()', async ({
       }
     }
     if (!panel) {
-      throw new Error('panel widget not found');
+      throw new Error('panel widget not found in left/right sidebars');
     }
-    (globalThis as any).__claudeSpinner = panel._showLaunchSpinner(
+    (window as any).__claudeSpinner = panel._showLaunchSpinner(
       'Opening fake-project...'
     );
   });
@@ -127,7 +114,7 @@ test('launch spinner dialog must be dismissable via dispose()', async ({
   // call (resolve is a no-op without buttons) and the next waitForSelector
   // would time out.
   await page.evaluate(() => {
-    (globalThis as any).__claudeSpinner.dispose();
+    (window as any).__claudeSpinner.dispose();
   });
 
   await page.waitForSelector(
