@@ -457,7 +457,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
           this._focusTerminal(widget);
         }
       } finally {
-        spinner.resolve();
+        spinner.dispose();
       }
     } catch (err) {
       this._showError(err);
@@ -545,7 +545,8 @@ export class ClaudeCodeSessionsWidget extends Widget {
   }
 
   /** Show a modal with a spinner while the terminal is being launched. The
-   * caller must dismiss it via ``.resolve()`` once the work is done.
+   * caller must dismiss it via ``.dispose()`` once the work is done - the
+   * dialog has no buttons so ``.resolve()`` would be a no-op.
    */
   private _showLaunchSpinner(label: string): Dialog<unknown> {
     const body = new Widget();
