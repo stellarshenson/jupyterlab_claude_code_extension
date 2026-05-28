@@ -564,7 +564,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
     const dialog = new Dialog<unknown>({
       title: 'Opening Claude Code session',
       body,
-      buttons: [Dialog.cancelButton({ label: 'Run in background' })]
+      buttons: []
     });
     // launch() returns a Promise we don't await - we resolve programmatically
     // when the spawn completes (or errors).
