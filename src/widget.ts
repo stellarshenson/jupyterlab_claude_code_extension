@@ -15,6 +15,7 @@ import { Message } from '@lumino/messaging';
 import { requestAPI } from './request';
 import {
   claudeIcon,
+  filterIcon,
   refreshIcon,
   removeIcon,
   shieldIcon,
@@ -183,6 +184,14 @@ export class ClaudeCodeSessionsWidget extends Widget {
     title.textContent = 'Claude Code Sessions';
     header.appendChild(title);
 
+    const filterBtn = document.createElement('button');
+    filterBtn.className = 'jp-ClaudeSessionsPanel-iconButton';
+    filterBtn.title = 'Filter sessions';
+    filterIcon.element({ container: filterBtn });
+    filterBtn.addEventListener('click', () => this._toggleFilterBar());
+    header.appendChild(filterBtn);
+    this._filterBtn = filterBtn;
+
     const refreshBtn = document.createElement('button');
     refreshBtn.className = 'jp-ClaudeSessionsPanel-iconButton';
     refreshBtn.title = 'Refresh';
@@ -196,10 +205,15 @@ export class ClaudeCodeSessionsWidget extends Widget {
     search.className = 'jp-ClaudeSessionsPanel-search';
     search.placeholder = 'Filter sessions...';
     search.spellcheck = false;
+    // Hidden by default; the filter-icon button reveals it. Lumino's
+    // ``hidden`` attribute toggles ``display: none`` via the user-agent
+    // stylesheet so no extra CSS rule is needed.
+    search.hidden = true;
     search.addEventListener('input', () => {
       this._filter = search.value;
       this._render();
     });
+    this._searchEl = search;
 
     const body = document.createElement('div');
     body.className = 'jp-ClaudeSessionsPanel-body';
@@ -209,6 +223,28 @@ export class ClaudeCodeSessionsWidget extends Widget {
     root.appendChild(body);
 
     this._bodyEl = body;
+  }
+
+  /** Show / hide the filter input. Hiding also clears the active filter
+   * so the user does not end up with an "invisible" filter narrowing
+   * the rows the next time they open the panel.
+   */
+  private _toggleFilterBar(): void {
+    if (!this._searchEl) {
+      return;
+    }
+    const show = this._searchEl.hidden;
+    this._searchEl.hidden = !show;
+    if (this._filterBtn) {
+      this._filterBtn.classList.toggle('jp-mod-active', show);
+    }
+    if (show) {
+      this._searchEl.focus();
+    } else if (this._filter) {
+      this._filter = '';
+      this._searchEl.value = '';
+      this._render();
+    }
   }
 
   /** Normalise strings for filter comparison: NFD-decompose, strip combining
@@ -1062,6 +1098,8 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private readonly _serverSettings: ServerConnection.ISettings;
   private _bodyEl!: HTMLDivElement;
   private _refreshBtn: HTMLButtonElement | null = null;
+  private _filterBtn: HTMLButtonElement | null = null;
+  private _searchEl: HTMLInputElement | null = null;
   private _sessions: ISession[] | null = null;
   private _expanded: Record<SectionKey, boolean> = loadExpanded();
   private _commands!: CommandRegistry;

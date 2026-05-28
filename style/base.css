@@ -55,6 +55,11 @@
   color: var(--jp-ui-font-color1);
 }
 
+.jp-ClaudeSessionsPanel-iconButton.jp-mod-active {
+  background: var(--jp-layout-color3);
+  color: var(--jp-brand-color1);
+}
+
 .jp-ClaudeSessionsPanel-iconButton svg {
   width: 14px;
   height: 14px;

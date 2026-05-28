@@ -59,3 +59,12 @@ export const shieldIcon = new LabIcon({
   name: 'jupyterlab_claude_code_extension:shield',
   svgstr: shieldSvgStr
 });
+
+const filterSvgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16">
+  <path class="jp-icon3" fill="#616161" d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/>
+</svg>`;
+
+export const filterIcon = new LabIcon({
+  name: 'jupyterlab_claude_code_extension:filter',
+  svgstr: filterSvgStr
+});
