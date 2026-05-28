@@ -98,9 +98,7 @@ test('launch spinner dialog must be dismissable via dispose()', async ({
     if (!panel) {
       throw new Error('panel widget not found in left/right sidebars');
     }
-    (window as any).__claudeSpinner = panel._showLaunchSpinner(
-      'Opening fake-project...'
-    );
+    (window as any).__claudeSpinner = panel._showLaunchSpinner();
   });
 
   // The spinner Dialog should appear, identified by its title.

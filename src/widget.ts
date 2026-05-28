@@ -431,9 +431,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
       // via terminal:open. When claude exits, the tab closes. The launch
       // RPC + the WebSocket-resize waiter on the server can take a few
       // seconds, so show a modal spinner for visual feedback.
-      const spinner = this._showLaunchSpinner(
-        `Opening ${this._lookupName(session)}...`
-      );
+      const spinner = this._showLaunchSpinner();
       try {
         const launched = await requestAPI<ILaunchTerminalResponse>(
           'launch-terminal',
@@ -548,7 +546,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
    * caller must dismiss it via ``.dispose()`` once the work is done - the
    * dialog has no buttons so ``.resolve()`` would be a no-op.
    */
-  private _showLaunchSpinner(label: string): Dialog<unknown> {
+  private _showLaunchSpinner(): Dialog<unknown> {
     const body = new Widget();
     body.node.className = 'jp-ClaudeSessionsPanel-launchOverlay';
 
@@ -556,11 +554,6 @@ export class ClaudeCodeSessionsWidget extends Widget {
     spinner.className =
       'jp-claude-sessions-panel-spinner jp-ClaudeSessionsPanel-launchSpinner';
     body.node.appendChild(spinner);
-
-    const text = document.createElement('div');
-    text.className = 'jp-ClaudeSessionsPanel-launchLabel';
-    text.textContent = label;
-    body.node.appendChild(text);
 
     const dialog = new Dialog<unknown>({
       title: 'Opening Claude Code session',
