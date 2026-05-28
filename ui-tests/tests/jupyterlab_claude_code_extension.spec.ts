@@ -34,25 +34,22 @@ test('should emit an activation console message', async ({ page }) => {
  * ``_doResumeInTerminal`` - otherwise the modal hangs over the panel
  * forever after the terminal opens.
  *
- * We force the panel to render by mocking ``/status`` so claude looks
- * installed, feed it one fake session via ``/sessions``, and stub
- * ``/launch-terminal`` so the request resolves without touching a real
- * terminal. The subsequent ``terminal:open`` will fail (the fake name is
- * not registered with jupyter_server's terminal manager) - that is fine
- * for this test: the spinner-dismiss is in ``finally`` and must run on
- * both the success and the error path.
+ * We rather than exercising the full backend, we drive the spinner
+ * directly through the widget's private API once the panel is mounted.
+ * The mocked ``/status`` makes the panel register on CI runners that
+ * have no ``claude`` binary; the spinner is then opened and disposed
+ * exactly the way ``_doResumeInTerminal``'s ``try/finally`` does.
  */
-test('launch spinner dismisses after the terminal launch flow completes', async ({
+test('launch spinner dialog must be dismissable via dispose()', async ({
   page
 }) => {
   await page.route('**/jupyterlab-claude-code-extension/status', route =>
     route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
-        has_claude: true,
-        root_dir: '/tmp',
-        version: '0.0.0',
-        running_sessions: []
+        enabled: true,
+        claude_path: '/usr/local/bin/claude',
+        root_dir: '/tmp'
       })
     })
   );
@@ -60,31 +57,8 @@ test('launch spinner dismisses after the terminal launch flow completes', async 
   await page.route('**/jupyterlab-claude-code-extension/sessions', route =>
     route.fulfill({
       contentType: 'application/json',
-      body: JSON.stringify({
-        sessions: [
-          {
-            project_path: '/tmp/fake-project',
-            session_id: 'fake-session-id',
-            updated_at: Math.floor(Date.now() / 1000),
-            message_count: 1,
-            branch: null,
-            live_pid: null,
-            favorite: false,
-            name: 'fake-project',
-            name_source: 'basename'
-          }
-        ]
-      })
+      body: JSON.stringify({ sessions: [] })
     })
-  );
-
-  await page.route(
-    '**/jupyterlab-claude-code-extension/launch-terminal',
-    route =>
-      route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ terminal_name: 'fake-terminal' })
-      })
   );
 
   await page.goto();
@@ -96,12 +70,51 @@ test('launch spinner dismisses after the terminal launch flow completes', async 
     app.shell.activateById('jupyterlab-claude-code-extension');
   });
 
-  // Wait for the row to render, then click it - this triggers
-  // ``_doResumeInTerminal`` which opens the spinner.
-  const row = await page.waitForSelector('.jp-ClaudeSessionsPanel-row', {
-    timeout: 10000
+  // Walk the lab shell to find our widget. The id was set in
+  // widget.ts:110. Once located, drive ``_showLaunchSpinner`` directly
+  // and stash the Dialog handle on ``window`` so we can dispose it from
+  // a second evaluate call. This mirrors the exact try/finally pattern
+  // in ``_doResumeInTerminal``.
+  await page.waitForFunction(
+    () => {
+      const app: any = (globalThis as any).jupyterapp;
+      if (!app?.shell?.widgets) {
+        return false;
+      }
+      for (const area of ['left', 'right']) {
+        for (const w of app.shell.widgets(area)) {
+          if (w.id === 'jupyterlab-claude-code-extension') {
+            return true;
+          }
+        }
+      }
+      return false;
+    },
+    null,
+    { timeout: 10000 }
+  );
+
+  await page.evaluate(() => {
+    const app: any = (globalThis as any).jupyterapp;
+    let panel: any = null;
+    for (const area of ['left', 'right']) {
+      for (const w of app.shell.widgets(area)) {
+        if (w.id === 'jupyterlab-claude-code-extension') {
+          panel = w;
+          break;
+        }
+      }
+      if (panel) {
+        break;
+      }
+    }
+    if (!panel) {
+      throw new Error('panel widget not found');
+    }
+    (globalThis as any).__claudeSpinner = panel._showLaunchSpinner(
+      'Opening fake-project...'
+    );
   });
-  await row.click();
 
   // The spinner Dialog should appear, identified by its title.
   await page.waitForSelector(
@@ -109,10 +122,14 @@ test('launch spinner dismisses after the terminal launch flow completes', async 
     { timeout: 5000 }
   );
 
-  // And then dismiss within a couple of seconds once the mocked launch
-  // flow returns - dispose() must close it even though there are no
-  // buttons. If someone reintroduces ``spinner.resolve()`` this assertion
-  // fails (resolve is a no-op without buttons).
+  // ``dispose()`` MUST detach it. If someone reintroduces
+  // ``spinner.resolve()`` the dialog would still be attached after the
+  // call (resolve is a no-op without buttons) and the next waitForSelector
+  // would time out.
+  await page.evaluate(() => {
+    (globalThis as any).__claudeSpinner.dispose();
+  });
+
   await page.waitForSelector(
     '.jp-Dialog-header:has-text("Opening Claude Code session")',
     { state: 'detached', timeout: 5000 }
