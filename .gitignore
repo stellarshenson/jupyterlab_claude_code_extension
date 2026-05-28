@@ -138,3 +138,6 @@ junit.xml
 # build/run logs and accidental uv lockfile
 logs/
 uv.lock
+
+# Claude Code wakeup-scheduler runtime lock (session-local pid + id)
+.claude/scheduled_tasks.lock
