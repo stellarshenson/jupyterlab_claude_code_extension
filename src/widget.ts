@@ -622,6 +622,11 @@ export class ClaudeCodeSessionsWidget extends Widget {
     if (this._presentationMode === 'path') {
       return this._displayPath(s.project_path) || folder;
     }
+    // Honour the session name Claude records (e.g. a `/rename`); fall back
+    // to the folder basename when the backend reports no session name.
+    if (s.name_source === 'session' && s.name) {
+      return s.name;
+    }
     return folder;
   }
 

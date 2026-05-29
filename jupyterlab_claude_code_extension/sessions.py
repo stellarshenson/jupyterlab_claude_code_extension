@@ -59,19 +59,20 @@ def _pid_alive(pid: int) -> bool:
 def session_state_by_cwd(claude_root: Path) -> dict[str, dict]:
     """Map ``cwd`` -> latest ``~/.claude/sessions/<pid>.json`` record fields.
 
-    The pid file's ``name`` field is *intentionally ignored*: Claude writes
-    both explicit ``/rename`` values and its own auto-derived topic names to
-    that single field with no way to distinguish them, and the panel labels
-    its rows from the project folder name instead (controlled by the
-    ``presentationMode`` setting).
+    The pid file's ``name`` is the value Claude itself shows for the session -
+    either an explicit ``/rename`` or Claude's own derived label. The panel
+    honours it so a renamed session (e.g. ``/rename scandi``) reads ``scandi``
+    rather than the folder basename.
 
     Each value carries:
       * ``live_pid`` - the PID if it is still alive, else ``None``
       * ``session_id`` - the sessionId in that record
       * ``updated_at`` - ms-epoch of last update
+      * ``name`` - the session ``name`` from that record (may be ``None``)
 
     When multiple ``<pid>.json`` files exist for the same cwd, the one with
-    the highest ``updatedAt`` wins.
+    the highest ``updatedAt`` wins - so the most recently active session's
+    name is the one shown.
     """
     by_cwd: dict[str, dict] = {}
     sessions_dir = claude_root / SESSIONS_DIRNAME
@@ -92,10 +93,12 @@ def session_state_by_cwd(claude_root: Path) -> dict[str, dict]:
         pid = data.get("pid")
         live = isinstance(pid, int) and _pid_alive(pid)
         sid = data.get("sessionId") if isinstance(data.get("sessionId"), str) else None
+        name = data.get("name") if isinstance(data.get("name"), str) else None
         by_cwd[cwd] = {
             "live_pid": pid if live else None,
             "session_id": sid,
             "updated_at": updated_at,
+            "name": name,
         }
     return by_cwd
 
@@ -378,13 +381,12 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
     ``created``, ``modified``, ``file_mtime``, ``git_branch``,
     ``remote_control``, ``favourite``.
 
-    ``name`` is always the project folder basename and ``name_source`` is
-    always ``"basename"``. The pid file's ``name`` field is intentionally
-    ignored - Claude writes both ``/rename`` values and its own auto-derived
-    topic names there with no way to tell them apart, so the panel labels
-    rows from the folder name (or path, depending on ``presentationMode``)
-    instead. The ``name_source`` field is retained in the row schema so older
-    frontends don't break.
+    ``name`` is the session name Claude records for the most recently active
+    session in that folder (``name_source = "session"``) when one exists,
+    otherwise the project folder basename (``name_source = "basename"``). This
+    is what lets a ``/rename`` show through: the row reads the renamed label
+    rather than the folder name. ``presentationMode`` in the frontend still
+    decides between this label and the relative path.
     """
     root = claude_root if claude_root is not None else claude_dir()
     projects_dir = root / PROJECTS_DIRNAME
@@ -428,12 +430,18 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
         first_prompt = latest.get("firstPrompt") or ""
 
         state = states.get(project_path) or {}
-        # Row label is always the folder basename - the pid file's `name` is
-        # ignored on purpose; presentationMode in the frontend decides whether
-        # the user sees the basename or the relative path. Path-tail
-        # disambiguation handles basename collisions across rows.
-        name = os.path.basename(project_path) or project_dir.name
-        name_source = "basename"
+        # Honour the session name Claude records (the latest pid record for
+        # this cwd, which is what `/rename` writes). Fall back to the folder
+        # basename only when no session name exists. Path-tail disambiguation
+        # handles basename collisions across rows.
+        basename = os.path.basename(project_path) or project_dir.name
+        session_name = state.get("name")
+        if isinstance(session_name, str) and session_name.strip():
+            name = session_name
+            name_source = "session"
+        else:
+            name = basename
+            name_source = "basename"
 
         rows.append({
             "project_path": project_path,

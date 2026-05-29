@@ -3,7 +3,7 @@ export interface ISession {
   encoded_path: string;
   session_id: string;
   name: string;
-  name_source: 'rename' | 'basename';
+  name_source: 'session' | 'basename';
   summary: string;
   first_prompt: string;
   message_count: number;

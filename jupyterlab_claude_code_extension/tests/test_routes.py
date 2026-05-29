@@ -151,30 +151,62 @@ def test_remote_control_flag_uses_live_pids(fake_claude: Path) -> None:
     assert rows["/home/user/projB"]["remote_control"] is False
 
 
-def test_pid_file_name_field_is_ignored_label_is_folder_basename(
+def test_pid_file_name_is_honoured_as_the_row_label(
     fake_claude: Path,
 ) -> None:
-    """The pid file's ``name`` field is intentionally ignored as of 1.1.8 -
-    Claude writes both ``/rename`` values and its own auto-derived topic
-    names there with no way to tell them apart, so the panel labels rows
-    from the folder name (with path-tail disambiguation in the frontend
-    when basenames collide). ``state`` no longer carries ``name``; row
-    labels are basenames and ``name_source`` is always ``"basename"``."""
+    """The pid file's ``name`` is the value Claude shows for the session
+    (set by ``/rename``); the panel honours it so a renamed session reads
+    that name rather than the folder basename. ``name_source`` is
+    ``"session"`` when the name came from a pid record."""
     sessions_dir = fake_claude / "sessions"
     sessions_dir.mkdir()
     (sessions_dir / "100.json").write_text(json.dumps({
         "pid": 100, "sessionId": "a", "cwd": "/home/user/projA",
-        "updatedAt": 1, "name": "court-cases",  # ignored
+        "updatedAt": 1, "name": "scandi",
     }))
     state = sessions_mod.session_state_by_cwd(fake_claude)
-    assert "name" not in state["/home/user/projA"]
+    assert state["/home/user/projA"]["name"] == "scandi"
     assert state["/home/user/projA"]["session_id"] == "a"
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/projA"]["name"] == "scandi"
+    assert rows["/home/user/projA"]["name_source"] == "session"
+    # Folders with no pid record fall back to the basename.
+    assert rows["/home/user/projB"]["name_source"] == "basename"
+    assert rows["/home/user/projC"]["name_source"] == "basename"
+
+
+def test_latest_pid_name_wins_after_rename(fake_claude: Path) -> None:
+    """Mirrors the live "proposals -> scandi" case: many pid records for one
+    cwd all say "proposals", a newer one (highest ``updatedAt``) says
+    "scandi" - the latest name must win."""
+    sessions_dir = fake_claude / "sessions"
+    sessions_dir.mkdir()
+    for i, ts in enumerate((10, 20, 30)):
+        (sessions_dir / f"{100 + i}.json").write_text(json.dumps({
+            "pid": 100 + i, "sessionId": "s", "cwd": "/home/user/projA",
+            "updatedAt": ts, "name": "projA",
+        }))
+    (sessions_dir / "200.json").write_text(json.dumps({
+        "pid": 200, "sessionId": "s", "cwd": "/home/user/projA",
+        "updatedAt": 999, "name": "scandi",  # newest -> wins
+    }))
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/projA"]["name"] == "scandi"
+    assert rows["/home/user/projA"]["name_source"] == "session"
+
+
+def test_blank_pid_name_falls_back_to_basename(fake_claude: Path) -> None:
+    """A whitespace-only or empty ``name`` is ignored; the row uses the
+    folder basename."""
+    sessions_dir = fake_claude / "sessions"
+    sessions_dir.mkdir()
+    (sessions_dir / "100.json").write_text(json.dumps({
+        "pid": 100, "sessionId": "a", "cwd": "/home/user/projA",
+        "updatedAt": 1, "name": "   ",
+    }))
     rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
     assert rows["/home/user/projA"]["name"] == "projA"
     assert rows["/home/user/projA"]["name_source"] == "basename"
-    # Every other row in the fixture is also basename-sourced.
-    assert rows["/home/user/projB"]["name_source"] == "basename"
-    assert rows["/home/user/projC"]["name_source"] == "basename"
 
 
 def test_session_state_picks_latest_updated_at(fake_claude: Path) -> None:
@@ -211,10 +243,10 @@ def test_session_state_by_cwd_returns_live_pid_and_session_id(fake_claude: Path)
     sessions_dir.mkdir()
     (sessions_dir / "1.json").write_text(json.dumps({
         "pid": 1, "sessionId": "live-sid", "cwd": "/some/cwd",
-        "updatedAt": 100, "name": "Hello",  # name field is ignored on read
+        "updatedAt": 100, "name": "Hello",
     }))
     state = sessions_mod.session_state_by_cwd(fake_claude)
-    assert "name" not in state["/some/cwd"]
+    assert state["/some/cwd"]["name"] == "Hello"
     assert state["/some/cwd"]["live_pid"] == 1
     assert state["/some/cwd"]["session_id"] == "live-sid"
 
@@ -280,7 +312,9 @@ def test_resolve_latest_prefers_jsonl_tail_cwd_over_stale_head(tmp_path: Path) -
         json.dumps({"cwd": "/home/user/newname", "type": "assistant"}),
     ]
     (proj / "sess-1.jsonl").write_text("\n".join(lines) + "\n")
-    # A leftover pid file from the old folder, carrying a /rename name.
+    # A leftover pid file from the OLD folder. Its cwd (/home/user/oldname)
+    # no longer matches the resolved project_path (/home/user/newname), so
+    # its name does not attach to this row - the basename is used instead.
     sessions_dir = root / "sessions"
     sessions_dir.mkdir()
     (sessions_dir / "9.json").write_text(json.dumps({
