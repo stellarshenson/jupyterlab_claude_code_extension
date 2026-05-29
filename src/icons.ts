@@ -60,13 +60,13 @@ export const shieldIcon = new LabIcon({
   svgstr: shieldSvgStr
 });
 
-// Magnifying-glass copied verbatim from @jupyterlab/ui-components'
-// `toolbar/search.svg` - same image the file browser's FilterBox shows
-// at the right of the filter input. The icon is used here on the toggle
-// button that reveals/hides our filter input, matching what the user
-// already recognises from the file browser.
-const filterSvgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="16" viewBox="0 0 18 18">
-  <path fill="#616161" d="M12.1 10.9h-.7l-.2-.2c.8-.9 1.3-2.2 1.3-3.5 0-3-2.4-5.4-5.4-5.4S1.8 4.2 1.8 7.1s2.4 5.4 5.4 5.4c1.3 0 2.5-.5 3.5-1.3l.2.2v.7l4.1 4.1 1.2-1.2zm-5 0c-2.1 0-3.7-1.7-3.7-3.7s1.7-3.7 3.7-3.7 3.7 1.7 3.7 3.7-1.6 3.7-3.7 3.7" class="jp-icon3"/>
+// Funnel copied verbatim from @jupyterlab/ui-components'
+// `search/filter.svg` - the same image the file browser's filter
+// toggle uses. The `class="jp-icon3"` lets JupyterLab's theme drive
+// the fill, so the `fill="#FFF"` on the source path becomes effectively
+// inert under the standard light/dark themes.
+const filterSvgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="16" viewBox="0 0 24 24">
+  <path fill="#FFF" d="M14 12v7.88c.04.3-.06.62-.29.83a.996.996 0 0 1-1.41 0l-2.01-2.01a.99.99 0 0 1-.29-.83V12h-.03L4.21 4.62a1 1 0 0 1 .17-1.4c.19-.14.4-.22.62-.22h14c.22 0 .43.08.62.22a1 1 0 0 1 .17 1.4L14.03 12z" class="jp-icon3"/>
 </svg>`;
 
 export const filterIcon = new LabIcon({
