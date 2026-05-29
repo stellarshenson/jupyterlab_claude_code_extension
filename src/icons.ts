@@ -60,8 +60,13 @@ export const shieldIcon = new LabIcon({
   svgstr: shieldSvgStr
 });
 
-const filterSvgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16">
-  <path class="jp-icon3" fill="#616161" d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/>
+// Magnifying-glass copied verbatim from @jupyterlab/ui-components'
+// `toolbar/search.svg` - same image the file browser's FilterBox shows
+// at the right of the filter input. The icon is used here on the toggle
+// button that reveals/hides our filter input, matching what the user
+// already recognises from the file browser.
+const filterSvgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="16" viewBox="0 0 18 18">
+  <path fill="#616161" d="M12.1 10.9h-.7l-.2-.2c.8-.9 1.3-2.2 1.3-3.5 0-3-2.4-5.4-5.4-5.4S1.8 4.2 1.8 7.1s2.4 5.4 5.4 5.4c1.3 0 2.5-.5 3.5-1.3l.2.2v.7l4.1 4.1 1.2-1.2zm-5 0c-2.1 0-3.7-1.7-3.7-3.7s1.7-3.7 3.7-3.7 3.7 1.7 3.7 3.7-1.6 3.7-3.7 3.7" class="jp-icon3"/>
 </svg>`;
 
 export const filterIcon = new LabIcon({
