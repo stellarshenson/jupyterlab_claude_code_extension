@@ -24,6 +24,7 @@ import {
 import {
   IFavouriteResponse,
   ILaunchTerminalResponse,
+  ICleanupResponse,
   IRemoveResponse,
   ISession,
   ISessionsListResponse
@@ -403,6 +404,23 @@ export class ClaudeCodeSessionsWidget extends Widget {
     } finally {
       this._removingPaths.delete(session.encoded_path);
       this._render();
+    }
+  }
+
+  private async _cleanupParallel(session: ISession): Promise<void> {
+    try {
+      await requestAPI<ICleanupResponse>(
+        'sessions/cleanup',
+        this._serverSettings,
+        {
+          method: 'POST',
+          body: JSON.stringify({ encoded_path: session.encoded_path })
+        }
+      );
+      // Refresh so the row's extra_sessions count (and menu label) update
+      await this._fetch();
+    } catch (err) {
+      this._showError(err);
     }
   }
 
@@ -1039,6 +1057,17 @@ export class ClaudeCodeSessionsWidget extends Widget {
       }
     });
 
+    this._commands.addCommand('claude-code-sessions:cleanup-parallel', {
+      label: () =>
+        `Clean Up Parallel Sessions (${this._activeSession?.extra_sessions ?? 0})`,
+      isVisible: () => (this._activeSession?.extra_sessions ?? 0) > 0,
+      execute: () => {
+        if (this._activeSession) {
+          void this._cleanupParallel(this._activeSession);
+        }
+      }
+    });
+
     this._commands.addCommand('claude-code-sessions:remove', {
       label: 'Remove from Claude',
       icon: removeIcon,
@@ -1066,6 +1095,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
     });
     this._contextMenu.addItem({ command: 'claude-code-sessions:copy-path' });
     this._contextMenu.addItem({ type: 'separator' });
+    this._contextMenu.addItem({
+      command: 'claude-code-sessions:cleanup-parallel'
+    });
     this._contextMenu.addItem({ command: 'claude-code-sessions:remove' });
 
     this._contextMenu.aboutToClose.connect(() => {

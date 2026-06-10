@@ -223,6 +223,39 @@ class SessionRemoveHandler(APIHandler):
         self.finish(json.dumps({"removed": encoded_path}))
 
 
+class SessionCleanupHandler(APIHandler):
+    """Remove a project's parallel sessions, keeping only the main one.
+
+    Body: ``{"encoded_path": "-home-lab-foo"}``
+
+    Honours JupyterLab's ``ContentsManager.delete_to_trash`` setting the same
+    way ``SessionRemoveHandler`` does.
+    """
+
+    @tornado.web.authenticated
+    def post(self) -> None:
+        try:
+            body = json.loads(self.request.body or b"{}")
+        except json.JSONDecodeError:
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_json"}))
+            return
+        encoded_path = body.get("encoded_path")
+        if not isinstance(encoded_path, str):
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_body"}))
+            return
+        to_trash = bool(getattr(self.contents_manager, "delete_to_trash", True))
+        removed = sessions_mod.cleanup_parallel_sessions(
+            sessions_mod.claude_dir(), encoded_path, to_trash=to_trash
+        )
+        if removed is None:
+            self.set_status(400)
+            self.finish(json.dumps({"error": "cleanup_failed"}))
+            return
+        self.finish(json.dumps({"removed_count": removed}))
+
+
 class TerminalCwdHandler(APIHandler):
     """Return the cwd of the deepest shell child of a JL terminal.
 
@@ -326,6 +359,7 @@ def setup_route_handlers(web_app) -> None:
         (url_path_join(base_url, URL_PREFIX, "sessions"), SessionsListHandler),
         (url_path_join(base_url, URL_PREFIX, "sessions", "favourite"), SessionFavouriteHandler),
         (url_path_join(base_url, URL_PREFIX, "sessions", "remove"), SessionRemoveHandler),
+        (url_path_join(base_url, URL_PREFIX, "sessions", "cleanup"), SessionCleanupHandler),
         (
             url_path_join(base_url, URL_PREFIX, "terminal-cwd", r"([^/]+)"),
             TerminalCwdHandler,

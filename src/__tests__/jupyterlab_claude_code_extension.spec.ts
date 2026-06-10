@@ -22,6 +22,7 @@ const session = (over: Partial<ISession> = {}): ISession => ({
   git_branch: null,
   remote_control: false,
   favourite: false,
+  extra_sessions: 0,
   ...over
 });
 

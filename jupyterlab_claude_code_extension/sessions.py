@@ -379,7 +379,8 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
     Each row carries: ``project_path``, ``encoded_path``, ``session_id``,
     ``name``, ``name_source``, ``summary``, ``first_prompt``, ``message_count``,
     ``created``, ``modified``, ``file_mtime``, ``git_branch``,
-    ``remote_control``, ``favourite``.
+    ``remote_control``, ``favourite``, ``extra_sessions`` (count of parallel
+    session JSONLs in the folder beyond the main one).
 
     ``name`` is the session name Claude records for the most recently active
     session in that folder (``name_source = "session"``) when one exists,
@@ -406,6 +407,7 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
         latest = _resolve_latest(project_dir, index)
         if latest is None:
             continue
+        extra_sessions = max(len(list(project_dir.glob("*.jsonl"))) - 1, 0)
 
         # ``_resolve_latest`` already picked the cwd that is consistent with
         # this directory's name when one exists, so trust its ``projectPath``
@@ -458,6 +460,7 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
             "remote_control": state.get("live_pid") is not None,
             "favourite": project_path in favourites,
             "name_source": name_source,
+            "extra_sessions": extra_sessions,
         })
 
     # Deduplicate by project_path: two encoded folders can resolve to the
@@ -531,3 +534,65 @@ def remove_session(
             pass
     shutil.rmtree(target)
     return True
+
+
+def _dispose_path(target: Path, to_trash: bool) -> None:
+    """Delete ``target`` (file or dir), via the desktop trash when asked.
+
+    Same trash semantics as ``remove_session``: a failed trash move falls
+    back to a permanent delete.
+    """
+    if to_trash:
+        try:
+            from send2trash import send2trash
+
+            send2trash(str(target))
+            return
+        except Exception:
+            pass
+    if target.is_dir():
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+
+
+def cleanup_parallel_sessions(
+    claude_root: Path, encoded_path: str, to_trash: bool = False
+) -> int | None:
+    """Remove every session in a project folder except the main one.
+
+    The main session is the same one ``list_sessions`` surfaces for the row
+    (``_resolve_latest``). For every other ``<sessionId>.jsonl`` the file and
+    its sibling ``<sessionId>/`` subagent directory (when present) are
+    removed - to the desktop trash when ``to_trash`` is true. Anything else
+    in the folder (``sessions-index.json``, ``memory/``, ...) is untouched.
+    Returns the number of sessions removed, or None on failure (path
+    traversal, missing folder, no resolvable main session).
+    """
+    if not encoded_path or "/" in encoded_path or encoded_path in (".", ".."):
+        return None
+    project_dir = (claude_root / PROJECTS_DIRNAME / encoded_path).resolve()
+    base = (claude_root / PROJECTS_DIRNAME).resolve()
+    try:
+        project_dir.relative_to(base)
+    except ValueError:
+        return None
+    if not project_dir.is_dir():
+        return None
+    index_path = project_dir / INDEX_FILENAME
+    index = _load_json(index_path) if index_path.is_file() else None
+    latest = _resolve_latest(project_dir, index)
+    if latest is None:
+        return None
+    keep = latest.get("sessionId")
+    removed = 0
+    for jsonl in project_dir.glob("*.jsonl"):
+        sid = jsonl.stem
+        if sid == keep:
+            continue
+        _dispose_path(jsonl, to_trash)
+        side_dir = project_dir / sid
+        if side_dir.is_dir():
+            _dispose_path(side_dir, to_trash)
+        removed += 1
+    return removed

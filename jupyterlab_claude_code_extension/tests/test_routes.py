@@ -293,6 +293,61 @@ def test_remove_session_to_trash_falls_back_to_permanent_delete(
     assert not target.exists()
 
 
+def test_list_sessions_reports_extra_sessions_count(fake_claude: Path) -> None:
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/projA"]["extra_sessions"] == 0
+    assert rows["/home/user/projB"]["extra_sessions"] == 1
+    assert rows["/home/user/projC"]["extra_sessions"] == 0
+
+
+def test_cleanup_parallel_sessions_keeps_only_main(fake_claude: Path) -> None:
+    b = fake_claude / "projects" / "-home-user-projB"
+    # Subagent dir for the old session must go with its jsonl; the keeper's
+    # dir and unrelated folders must survive.
+    (b / "bbbb-old").mkdir()
+    (b / "bbbb-new").mkdir()
+    (b / "memory").mkdir()
+    removed = sessions_mod.cleanup_parallel_sessions(fake_claude, "-home-user-projB")
+    assert removed == 1
+    assert not (b / "bbbb-old.jsonl").exists()
+    assert not (b / "bbbb-old").exists()
+    assert (b / "bbbb-new.jsonl").exists()
+    assert (b / "bbbb-new").is_dir()
+    assert (b / "memory").is_dir()
+    assert (b / "sessions-index.json").exists()
+
+
+def test_cleanup_parallel_sessions_noop_when_single_session(fake_claude: Path) -> None:
+    a = fake_claude / "projects" / "-home-user-projA"
+    removed = sessions_mod.cleanup_parallel_sessions(fake_claude, "-home-user-projA")
+    assert removed == 0
+    assert (a / "aaaa-1111.jsonl").exists()
+
+
+def test_cleanup_parallel_sessions_rejects_traversal(fake_claude: Path) -> None:
+    assert sessions_mod.cleanup_parallel_sessions(fake_claude, "../../etc") is None
+    assert sessions_mod.cleanup_parallel_sessions(fake_claude, "..") is None
+    assert sessions_mod.cleanup_parallel_sessions(fake_claude, "") is None
+    assert sessions_mod.cleanup_parallel_sessions(fake_claude, "no-such-dir") is None
+
+
+def test_cleanup_parallel_sessions_to_trash_uses_send2trash(
+    fake_claude: Path, monkeypatch
+) -> None:
+    import send2trash
+
+    calls: list[str] = []
+    monkeypatch.setattr(send2trash, "send2trash", calls.append)
+    b = fake_claude / "projects" / "-home-user-projB"
+    removed = sessions_mod.cleanup_parallel_sessions(
+        fake_claude, "-home-user-projB", to_trash=True
+    )
+    assert removed == 1
+    assert calls == [str(b / "bbbb-old.jsonl")]
+    # send2trash was stubbed - the file is untouched, but the call happened.
+    assert (b / "bbbb-old.jsonl").exists()
+
+
 def test_resolve_latest_prefers_jsonl_tail_cwd_over_stale_head(tmp_path: Path) -> None:
     """A session re-homed after its project folder was renamed keeps the old
     cwd in its early records. ``list_sessions`` must report the *current*
@@ -614,6 +669,39 @@ async def test_remove_endpoint_rejects_traversal(jp_fetch, patched_claude_dir) -
     with pytest.raises(Exception) as exc:
         await jp_fetch(
             "jupyterlab-claude-code-extension", "sessions", "remove",
+            method="POST", body=body,
+        )
+    assert "400" in str(exc.value)
+
+
+async def test_cleanup_endpoint(jp_fetch, patched_claude_dir, monkeypatch) -> None:
+    # Same trash stubbing as test_remove_endpoint - the handler honours
+    # ContentsManager.delete_to_trash (default on).
+    import send2trash
+
+    seen: list[str] = []
+    monkeypatch.setattr(
+        send2trash, "send2trash", lambda p: (seen.append(p), os.remove(p))
+    )
+    body = json.dumps({"encoded_path": "-home-user-projB"})
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "sessions", "cleanup",
+        method="POST", body=body,
+    )
+    assert response.code == 200
+    payload = json.loads(response.body)
+    assert payload["removed_count"] == 1
+    assert seen  # routed through the trash path
+    b = patched_claude_dir / "projects" / "-home-user-projB"
+    assert not (b / "bbbb-old.jsonl").exists()
+    assert (b / "bbbb-new.jsonl").exists()
+
+
+async def test_cleanup_endpoint_rejects_traversal(jp_fetch, patched_claude_dir) -> None:
+    body = json.dumps({"encoded_path": "../etc"})
+    with pytest.raises(Exception) as exc:
+        await jp_fetch(
+            "jupyterlab-claude-code-extension", "sessions", "cleanup",
             method="POST", body=body,
         )
     assert "400" in str(exc.value)

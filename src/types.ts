@@ -13,6 +13,7 @@ export interface ISession {
   git_branch: string | null;
   remote_control: boolean;
   favourite: boolean;
+  extra_sessions: number;
 }
 
 export interface ISessionsListResponse {
@@ -40,6 +41,14 @@ export interface IRemoveRequest {
 
 export interface IRemoveResponse {
   removed: string;
+}
+
+export interface ICleanupRequest {
+  encoded_path: string;
+}
+
+export interface ICleanupResponse {
+  removed_count: number;
 }
 
 export interface ILaunchTerminalRequest {
