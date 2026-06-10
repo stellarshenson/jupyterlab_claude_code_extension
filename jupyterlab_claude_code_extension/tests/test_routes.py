@@ -705,3 +705,72 @@ async def test_cleanup_endpoint_rejects_traversal(jp_fetch, patched_claude_dir) 
             method="POST", body=body,
         )
     assert "400" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# launch-terminal endpoint
+# ---------------------------------------------------------------------------
+
+
+class _FakeTerminalManager:
+    def __init__(self) -> None:
+        self.kwargs: dict | None = None
+
+    def create(self, **kwargs):
+        self.kwargs = kwargs
+        return {"name": "term-x"}
+
+
+@pytest.fixture
+def fake_terminal_manager(jp_serverapp, monkeypatch):
+    manager = _FakeTerminalManager()
+    jp_serverapp.web_app.settings["terminal_manager"] = manager
+    monkeypatch.setattr(
+        sessions_mod, "claude_binary_available", lambda: "/usr/bin/claude"
+    )
+    return manager
+
+
+async def test_launch_terminal_new_session_without_session_id(
+    jp_fetch, fake_terminal_manager, tmp_path
+) -> None:
+    body = json.dumps({"project_path": str(tmp_path)})
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "launch-terminal",
+        method="POST", body=body,
+    )
+    assert response.code == 200
+    assert json.loads(response.body) == {"terminal_name": "term-x"}
+    cmd = fake_terminal_manager.kwargs["shell_command"]
+    assert "/usr/bin/claude" in cmd
+    assert "--resume" not in cmd
+    assert fake_terminal_manager.kwargs["cwd"] == str(tmp_path)
+
+
+async def test_launch_terminal_resume_keeps_session_id(
+    jp_fetch, fake_terminal_manager, tmp_path
+) -> None:
+    body = json.dumps({
+        "project_path": str(tmp_path),
+        "session_id": "sid-1",
+        "dangerously_skip_permissions": True,
+    })
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "launch-terminal",
+        method="POST", body=body,
+    )
+    assert response.code == 200
+    cmd = fake_terminal_manager.kwargs["shell_command"]
+    assert cmd[-3:] == ["--resume", "sid-1", "--dangerously-skip-permissions"]
+
+
+async def test_launch_terminal_rejects_blank_session_id(
+    jp_fetch, fake_terminal_manager, tmp_path
+) -> None:
+    body = json.dumps({"project_path": str(tmp_path), "session_id": ""})
+    with pytest.raises(Exception) as exc:
+        await jp_fetch(
+            "jupyterlab-claude-code-extension", "launch-terminal",
+            method="POST", body=body,
+        )
+    assert "400" in str(exc.value)

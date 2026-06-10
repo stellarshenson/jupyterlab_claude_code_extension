@@ -6,6 +6,7 @@ import {
   showDialog
 } from '@jupyterlab/apputils';
 import { ServerConnection } from '@jupyterlab/services';
+import { IDefaultFileBrowser } from '@jupyterlab/filebrowser';
 import { ITerminalTracker } from '@jupyterlab/terminal';
 import { folderIcon, terminalIcon } from '@jupyterlab/ui-components';
 import { CommandRegistry } from '@lumino/commands';
@@ -14,6 +15,8 @@ import { Message } from '@lumino/messaging';
 
 import { requestAPI } from './request';
 import {
+  addIcon,
+  addShieldIcon,
   claudeIcon,
   filterIcon,
   refreshIcon,
@@ -101,13 +104,15 @@ export class ClaudeCodeSessionsWidget extends Widget {
   constructor(
     app: JupyterFrontEnd,
     rootDir: string,
-    terminalTracker: ITerminalTracker | null = null
+    terminalTracker: ITerminalTracker | null = null,
+    fileBrowser: IDefaultFileBrowser | null = null
   ) {
     super();
     this._app = app;
     this._serverSettings = app.serviceManager.serverSettings;
     this._rootDir = rootDir.replace(/\/+$/, '');
     this._terminalTracker = terminalTracker;
+    this._fileBrowser = fileBrowser;
 
     this.id = 'jupyterlab-claude-code-extension';
     this.title.icon = claudeIcon;
@@ -184,6 +189,21 @@ export class ClaudeCodeSessionsWidget extends Widget {
     title.className = 'jp-ClaudeSessionsPanel-title';
     title.textContent = 'Claude Code Sessions';
     header.appendChild(title);
+
+    const newBtn = document.createElement('button');
+    newBtn.className = 'jp-ClaudeSessionsPanel-iconButton';
+    newBtn.title = 'New Claude session in the current folder';
+    addIcon.element({ container: newBtn });
+    newBtn.addEventListener('click', () => void this._newSession(false));
+    header.appendChild(newBtn);
+
+    const newSkipBtn = document.createElement('button');
+    newSkipBtn.className = 'jp-ClaudeSessionsPanel-iconButton';
+    newSkipBtn.title =
+      'New Claude session in the current folder (Skip Permissions)';
+    addShieldIcon.element({ container: newSkipBtn });
+    newSkipBtn.addEventListener('click', () => void this._newSession(true));
+    header.appendChild(newSkipBtn);
 
     const filterBtn = document.createElement('button');
     filterBtn.className = 'jp-ClaudeSessionsPanel-iconButton';
@@ -562,6 +582,57 @@ export class ClaudeCodeSessionsWidget extends Widget {
     } finally {
       // Reuse or fresh launch, either way the picture changed (a session may
       // now be remote-controlled, a row may have appeared). Pull fresh state.
+      void this._fetch().catch(() => {
+        /* a poll tick will retry; nothing actionable here */
+      });
+    }
+  }
+
+  /** Absolute path of the file browser's current folder; falls back to the
+   * server root when no file browser is available. */
+  private _currentFolder(): string {
+    const rel = (this._fileBrowser?.model?.path ?? '').replace(/^\/+/, '');
+    return rel ? `${this._rootDir}/${rel}` : this._rootDir;
+  }
+
+  /** Start a brand-new claude session in the file browser's current folder.
+   * Same launch path as resuming (claude is the pty's only process via the
+   * launch-terminal endpoint) - just without --resume, and always a fresh
+   * terminal since there is no existing session to reuse.
+   */
+  private async _newSession(forceDangerous: boolean): Promise<void> {
+    const projectPath = this._currentFolder();
+    if (!projectPath) {
+      return;
+    }
+    const spinner = this._showLaunchSpinner();
+    try {
+      const launched = await requestAPI<ILaunchTerminalResponse>(
+        'launch-terminal',
+        this._serverSettings,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            project_path: projectPath,
+            dangerously_skip_permissions:
+              forceDangerous || this._dangerouslySkip
+          })
+        }
+      );
+      const widget: any = await this._app.commands.execute('terminal:open', {
+        name: launched.terminal_name
+      });
+      if (widget?.id) {
+        this._terminalsByPath.set(projectPath, widget);
+        this._wireTerminalDisposal(projectPath, widget);
+        this._focusTerminal(widget);
+      }
+    } catch (err) {
+      this._showError(err);
+    } finally {
+      spinner.dispose();
+      // The new session creates a project dir under ~/.claude - refresh so
+      // its row (and remote-control state) appears without waiting a poll.
       void this._fetch().catch(() => {
         /* a poll tick will retry; nothing actionable here */
       });
@@ -1192,6 +1263,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private _pollHandle: number | null = null;
   private readonly _removingPaths: Set<string> = new Set();
   private readonly _terminalTracker: ITerminalTracker | null;
+  private readonly _fileBrowser: IDefaultFileBrowser | null;
   private readonly _terminalsByPath: Map<string, any> = new Map();
   private readonly _pendingByPath: Map<string, Promise<void>> = new Map();
   private readonly _rootDir: string;

@@ -4,6 +4,7 @@ import {
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
+import { IDefaultFileBrowser } from '@jupyterlab/filebrowser';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
 import { ITerminalTracker } from '@jupyterlab/terminal';
 
@@ -20,13 +21,19 @@ const plugin: JupyterFrontEndPlugin<void> = {
     'Side panel listing Claude Code sessions per project folder, with remote-control indicator, favorites, and one-click resume in a terminal.',
   autoStart: true,
   requires: [ILabShell],
-  optional: [ILayoutRestorer, ISettingRegistry, ITerminalTracker],
+  optional: [
+    ILayoutRestorer,
+    ISettingRegistry,
+    ITerminalTracker,
+    IDefaultFileBrowser
+  ],
   activate: async (
     app: JupyterFrontEnd,
     labShell: ILabShell,
     restorer: ILayoutRestorer | null,
     settingRegistry: ISettingRegistry | null,
-    terminalTracker: ITerminalTracker | null
+    terminalTracker: ITerminalTracker | null,
+    fileBrowser: IDefaultFileBrowser | null
   ) => {
     const settings = app.serviceManager.serverSettings;
 
@@ -51,7 +58,8 @@ const plugin: JupyterFrontEndPlugin<void> = {
     const widget = new ClaudeCodeSessionsWidget(
       app,
       status.root_dir || '',
-      terminalTracker
+      terminalTracker,
+      fileBrowser
     );
 
     // Read the sidebar setting before docking so we add the widget to the

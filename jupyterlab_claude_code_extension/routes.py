@@ -290,7 +290,10 @@ class TerminalCwdHandler(APIHandler):
 
 
 class LaunchClaudeTerminalHandler(APIHandler):
-    """Spawn a JL terminal whose pty's only process is ``claude --resume``.
+    """Spawn a JL terminal whose pty's only process is ``claude``.
+
+    With ``session_id`` in the body the session is resumed (``claude
+    --resume <id>``); without it a brand-new claude session starts.
 
     Bypasses ``terminal:create-new`` (which spawns the user's $SHELL) so the
     terminal tab shows claude immediately without any visible bash. Uses
@@ -316,7 +319,11 @@ class LaunchClaudeTerminalHandler(APIHandler):
             self.set_status(400)
             self.finish(json.dumps({"error": "invalid_project_path"}))
             return
-        if not isinstance(session_id, str) or not session_id:
+        # ``session_id`` is optional: absent/None means "start a new claude
+        # session" instead of resuming an existing one.
+        if session_id is not None and (
+            not isinstance(session_id, str) or not session_id
+        ):
             self.set_status(400)
             self.finish(json.dumps({"error": "invalid_session_id"}))
             return
@@ -330,7 +337,7 @@ class LaunchClaudeTerminalHandler(APIHandler):
             self.set_status(503)
             self.finish(json.dumps({"error": "terminal_service_unavailable"}))
             return
-        argv = [claude, "--resume", session_id]
+        argv = [claude, "--resume", session_id] if session_id else [claude]
         if dangerously_skip:
             argv.append("--dangerously-skip-permissions")
         model = terminal_manager.create(

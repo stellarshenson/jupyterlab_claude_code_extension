@@ -60,6 +60,32 @@ export const shieldIcon = new LabIcon({
   svgstr: shieldSvgStr
 });
 
+// Material "add" plus, same 16px/jp-icon3 treatment as the other header
+// icons.
+const addSvgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16">
+  <path class="jp-icon3" fill="#616161" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+</svg>`;
+
+export const addIcon = new LabIcon({
+  name: 'jupyterlab_claude_code_extension:add',
+  svgstr: addSvgStr
+});
+
+// Plus with a small solid shield in the lower-right corner - the
+// skip-permissions variant of the "new session" button, echoing the
+// shield used on the context menu's "Resume (Skip Permissions)".
+const addShieldSvgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16">
+  <g class="jp-icon3" fill="#616161">
+    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" transform="translate(-2,-2) scale(0.83)"/>
+    <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" transform="translate(13,12) scale(0.46)"/>
+  </g>
+</svg>`;
+
+export const addShieldIcon = new LabIcon({
+  name: 'jupyterlab_claude_code_extension:add-shield',
+  svgstr: addShieldSvgStr
+});
+
 // Funnel copied verbatim from @jupyterlab/ui-components'
 // `search/filter.svg` - the same image the file browser's filter
 // toggle uses. The `class="jp-icon3"` lets JupyterLab's theme drive

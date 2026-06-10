@@ -4,6 +4,15 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.1.27] - 2026-06-10
+
+### Added
+
+- Two panel header buttons to start a brand-new Claude session in the file browser's current folder: a plus icon (normal) and a plus-with-shield icon launching with --dangerously-skip-permissions; both use the same no-shell launch path as resuming, just without --resume
+- `launch-terminal` endpoint accepts an optional `session_id` - omitted means start a new session
+- Galata UI tests: a fake `claude` binary on the test server's PATH so the panel registers in CI, specs covering the new header buttons and the click-to-terminal launch, and a `JLAB_TEST_PORT` override in the Playwright config for machines where 8888 is taken
+- Backend tests for the launch endpoint (new session, resume with skip-permissions flag, blank session id rejected)
+
 ## [1.1.25] - 2026-06-10
 
 ### Added

@@ -25,3 +25,50 @@ test('should emit an activation console message', async ({ page }) => {
   );
   expect(activated).toBe(true);
 });
+
+/**
+ * The test server config puts a fake `claude` script on PATH, so the panel
+ * registers and the launch-terminal endpoint can spawn a real pty running
+ * that script.
+ */
+test('panel header has new-session buttons', async ({ page }) => {
+  await page.goto();
+  await page.sidebar.openTab('jupyterlab-claude-code-extension');
+
+  const panel = page.locator('#jupyterlab-claude-code-extension');
+  await expect(panel).toBeVisible();
+
+  await expect(
+    panel.locator('button[title="New Claude session in the current folder"]')
+  ).toBeVisible();
+  await expect(
+    panel.locator(
+      'button[title="New Claude session in the current folder (Skip Permissions)"]'
+    )
+  ).toBeVisible();
+});
+
+test('new-session button opens a terminal in the current folder', async ({
+  page
+}) => {
+  await page.goto();
+  await page.sidebar.openTab('jupyterlab-claude-code-extension');
+
+  const panel = page.locator('#jupyterlab-claude-code-extension');
+  await panel
+    .locator('button[title="New Claude session in the current folder"]')
+    .click();
+
+  // The launch flow shows a modal spinner, POSTs launch-terminal (no
+  // session_id -> new session), then attaches JL's terminal widget. The
+  // pty runs the fake claude script directly - no shell prompt. xterm
+  // paints to canvas so the script's output is not assertable via DOM
+  // text; instead confirm the server now reports a live terminal session.
+  const terminal = page.locator('.jp-Terminal');
+  await expect(terminal).toBeVisible({ timeout: 30000 });
+
+  const response = await page.request.get('/api/terminals');
+  expect(response.ok()).toBe(true);
+  const terminals = (await response.json()) as Array<{ name: string }>;
+  expect(terminals.length).toBeGreaterThan(0);
+});

@@ -53,7 +53,8 @@ export interface ICleanupResponse {
 
 export interface ILaunchTerminalRequest {
   project_path: string;
-  session_id: string;
+  /** Omit to start a brand-new claude session instead of resuming one. */
+  session_id?: string;
   dangerously_skip_permissions?: boolean;
 }
 
