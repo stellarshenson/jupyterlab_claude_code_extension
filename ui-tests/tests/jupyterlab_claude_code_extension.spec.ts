@@ -31,24 +31,30 @@ test('should emit an activation console message', async ({ page }) => {
  * registers and the launch-terminal endpoint can spawn a real pty running
  * that script.
  */
-test('panel header has new-session buttons', async ({ page }) => {
+test('plus button opens the new-session menu', async ({ page }) => {
   await page.goto();
   await page.sidebar.openTab('jupyterlab-claude-code-extension');
 
   const panel = page.locator('#jupyterlab-claude-code-extension');
   await expect(panel).toBeVisible();
 
+  await panel
+    .locator('button[title="New Claude session in the current folder"]')
+    .click();
+
+  const menu = page.locator('.lm-Menu.jp-ClaudeSessionsContextMenu');
+  await expect(menu).toBeVisible();
   await expect(
-    panel.locator('button[title="New Claude session in the current folder"]')
-  ).toBeVisible();
+    menu.locator('.lm-Menu-itemLabel', { hasText: 'New Claude Session' })
+  ).toHaveCount(2);
   await expect(
-    panel.locator(
-      'button[title="New Claude session in the current folder (Skip Permissions)"]'
-    )
-  ).toBeVisible();
+    menu.locator('.lm-Menu-itemLabel', {
+      hasText: 'New Claude Session (Skip Permissions)'
+    })
+  ).toHaveCount(1);
 });
 
-test('new-session button opens a terminal in the current folder', async ({
+test('new-session menu item opens a terminal in the current folder', async ({
   page
 }) => {
   await page.goto();
@@ -57,6 +63,13 @@ test('new-session button opens a terminal in the current folder', async ({
   const panel = page.locator('#jupyterlab-claude-code-extension');
   await panel
     .locator('button[title="New Claude session in the current folder"]')
+    .click();
+
+  const menu = page.locator('.lm-Menu.jp-ClaudeSessionsContextMenu');
+  await menu
+    .locator('.lm-Menu-itemLabel', {
+      hasText: /^New Claude Session$/
+    })
     .click();
 
   // The launch flow shows a modal spinner, POSTs launch-terminal (no

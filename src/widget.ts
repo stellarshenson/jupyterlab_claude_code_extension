@@ -16,7 +16,6 @@ import { Message } from '@lumino/messaging';
 import { requestAPI } from './request';
 import {
   addIcon,
-  addShieldIcon,
   claudeIcon,
   filterIcon,
   refreshIcon,
@@ -194,16 +193,12 @@ export class ClaudeCodeSessionsWidget extends Widget {
     newBtn.className = 'jp-ClaudeSessionsPanel-iconButton';
     newBtn.title = 'New Claude session in the current folder';
     addIcon.element({ container: newBtn });
-    newBtn.addEventListener('click', () => void this._newSession(false));
+    newBtn.addEventListener('click', () => {
+      // Drop the menu just below the button, left-aligned with it.
+      const rect = newBtn.getBoundingClientRect();
+      this._newSessionMenu.open(rect.left, rect.bottom);
+    });
     header.appendChild(newBtn);
-
-    const newSkipBtn = document.createElement('button');
-    newSkipBtn.className = 'jp-ClaudeSessionsPanel-iconButton';
-    newSkipBtn.title =
-      'New Claude session in the current folder (Skip Permissions)';
-    addShieldIcon.element({ container: newSkipBtn });
-    newSkipBtn.addEventListener('click', () => void this._newSession(true));
-    header.appendChild(newSkipBtn);
 
     const filterBtn = document.createElement('button');
     filterBtn.className = 'jp-ClaudeSessionsPanel-iconButton';
@@ -1195,6 +1190,28 @@ export class ClaudeCodeSessionsWidget extends Widget {
       }
     });
 
+    this._commands.addCommand('claude-code-sessions:new-session', {
+      label: 'New Claude Session',
+      execute: () => void this._newSession(false)
+    });
+
+    this._commands.addCommand('claude-code-sessions:new-session-dangerous', {
+      label: 'New Claude Session (Skip Permissions)',
+      icon: shieldIcon,
+      execute: () => void this._newSession(true)
+    });
+
+    // Dropdown for the header's plus button - same command registry and
+    // styling as the row context menu.
+    this._newSessionMenu = new Menu({ commands: this._commands });
+    this._newSessionMenu.addClass('jp-ClaudeSessionsContextMenu');
+    this._newSessionMenu.addItem({
+      command: 'claude-code-sessions:new-session'
+    });
+    this._newSessionMenu.addItem({
+      command: 'claude-code-sessions:new-session-dangerous'
+    });
+
     this._contextMenu = new Menu({ commands: this._commands });
     this._contextMenu.addClass('jp-ClaudeSessionsContextMenu');
     this._contextMenu.addItem({ command: 'claude-code-sessions:resume' });
@@ -1258,6 +1275,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private _expanded: Record<SectionKey, boolean> = loadExpanded();
   private _commands!: CommandRegistry;
   private _contextMenu!: Menu;
+  private _newSessionMenu!: Menu;
   private _activeSession: ISession | null = null;
   private _activeRowEl: HTMLElement | null = null;
   private _pollHandle: number | null = null;

@@ -4,6 +4,13 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.1.29] - 2026-06-11
+
+### Changed
+
+- The two new-session header buttons are now a single plus button that opens a dropdown menu with "New Claude Session" and "New Claude Session (Skip Permissions)" (shield icon), styled like the row context menu
+- Galata specs drive the dropdown: open it, assert both items, launch via the menu item and verify the terminal session
+
 ## [1.1.27] - 2026-06-10
 
 ### Added
