@@ -261,6 +261,24 @@
   border-width: 3px;
 }
 
+.jp-ClaudeSessionsPanel-cleanupBody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 8px;
+  min-width: 280px;
+}
+
+.jp-ClaudeSessionsPanel-cleanupProgress {
+  width: 100%;
+}
+
+.jp-ClaudeSessionsPanel-cleanupError {
+  color: var(--jp-error-color1);
+}
+
 .jp-ClaudeSessionsPanel-row.jp-mod-busy {
   opacity: 0.55;
   pointer-events: none;

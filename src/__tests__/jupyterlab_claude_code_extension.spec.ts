@@ -84,6 +84,44 @@ describe('launch spinner dismiss contract', () => {
     'utf-8'
   );
 
+  /**
+   * Contract for the cleanup-parallel popup: the dialog opens with the
+   * Close button hidden while the POST is in flight (footer display
+   * 'none'), shows an indeterminate <progress> bar, then on completion
+   * fills the bar and reports success - or drops the bar and shows the
+   * error - and restores the footer so the user can dismiss.
+   */
+  describe('cleanup popup contract', () => {
+    const cleanup = (widgetSrc.match(
+      /private async _cleanupParallel[\s\S]*?\n  \}/
+    ) ?? [''])[0];
+
+    it('creates a progress element in the dialog body', () => {
+      expect(cleanup).toMatch(/createElement\('progress'\)/);
+    });
+
+    it('hides the footer during the request and restores it in finally', () => {
+      expect(cleanup).toMatch(/footer\.style\.display = 'none'/);
+      expect(cleanup).toMatch(/finally[\s\S]*?footer\.style\.display = ''/);
+    });
+
+    it('fills the bar and reports the removed count on success', () => {
+      expect(cleanup).toMatch(/bar\.value = 1/);
+      expect(cleanup).toMatch(/Removed \$\{data\.removed_count\}/);
+    });
+
+    it('shows an error message styled with the error class on failure', () => {
+      expect(cleanup).toMatch(/catch[\s\S]*?bar\.remove\(\)/);
+      expect(cleanup).toMatch(/jp-ClaudeSessionsPanel-cleanupError/);
+      expect(cleanup).toMatch(/Cleanup failed: /);
+    });
+
+    it('refreshes the session list after a successful cleanup', () => {
+      const successBlock = (cleanup.match(/try[\s\S]*?catch/) ?? [''])[0];
+      expect(successBlock).toMatch(/await this\._fetch\(\)/);
+    });
+  });
+
   it('_doResumeInTerminal dismisses spinner via dispose(), not resolve()', () => {
     expect(widgetSrc).toMatch(/spinner\.dispose\(\)/);
     expect(widgetSrc).not.toMatch(/spinner\.resolve\(\)/);

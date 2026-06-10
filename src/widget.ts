@@ -408,8 +408,41 @@ export class ClaudeCodeSessionsWidget extends Widget {
   }
 
   private async _cleanupParallel(session: ISession): Promise<void> {
+    const body = new Widget();
+    body.node.className = 'jp-ClaudeSessionsPanel-cleanupBody';
+
+    const message = document.createElement('div');
+    message.className = 'jp-ClaudeSessionsPanel-cleanupMessage';
+    const count = session.extra_sessions;
+    message.textContent = `Removing ${count} parallel session${
+      count === 1 ? '' : 's'
+    }...`;
+    body.node.appendChild(message);
+
+    // No `value` attribute -> indeterminate (animated) while the request is
+    // in flight; set to max on completion so the bar reads as finished.
+    const bar = document.createElement('progress');
+    bar.className = 'jp-ClaudeSessionsPanel-cleanupProgress';
+    bar.max = 1;
+    body.node.appendChild(bar);
+
+    const dialog = new Dialog<unknown>({
+      title: 'Clean Up Parallel Sessions',
+      body,
+      buttons: [Dialog.okButton({ label: 'Close' })]
+    });
+    // Hide the Close button while work is in progress; restore it once the
+    // outcome (success or error) is shown so the user dismisses the popup.
+    const footer = dialog.node.querySelector(
+      '.jp-Dialog-footer'
+    ) as HTMLElement | null;
+    if (footer) {
+      footer.style.display = 'none';
+    }
+    void dialog.launch();
+
     try {
-      await requestAPI<ICleanupResponse>(
+      const data = await requestAPI<ICleanupResponse>(
         'sessions/cleanup',
         this._serverSettings,
         {
@@ -417,10 +450,23 @@ export class ClaudeCodeSessionsWidget extends Widget {
           body: JSON.stringify({ encoded_path: session.encoded_path })
         }
       );
+      bar.value = 1;
+      message.textContent = `Removed ${data.removed_count} parallel session${
+        data.removed_count === 1 ? '' : 's'
+      }.`;
       // Refresh so the row's extra_sessions count (and menu label) update
       await this._fetch();
     } catch (err) {
+      bar.remove();
+      message.classList.add('jp-ClaudeSessionsPanel-cleanupError');
+      message.textContent = `Cleanup failed: ${
+        err instanceof Error ? err.message : String(err)
+      }`;
       this._showError(err);
+    } finally {
+      if (footer) {
+        footer.style.display = '';
+      }
     }
   }
 
