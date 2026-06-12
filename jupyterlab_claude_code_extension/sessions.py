@@ -601,6 +601,112 @@ def _dispose_path(target: Path, to_trash: bool) -> None:
         target.unlink()
 
 
+def _safe_project_dir(claude_root: Path, encoded_path: str) -> Path | None:
+    """Resolve ``~/.claude/projects/<encoded_path>`` rejecting traversal.
+
+    Same validation as ``cleanup_parallel_sessions``: no ``/`` in the
+    segment, no ``.``/``..``, and the resolved dir must stay under the
+    projects root. Returns None when invalid or not a directory.
+    """
+    if not encoded_path or "/" in encoded_path or encoded_path in (".", ".."):
+        return None
+    project_dir = (claude_root / PROJECTS_DIRNAME / encoded_path).resolve()
+    base = (claude_root / PROJECTS_DIRNAME).resolve()
+    try:
+        project_dir.relative_to(base)
+    except ValueError:
+        return None
+    if not project_dir.is_dir():
+        return None
+    return project_dir
+
+
+def list_branches(claude_root: Path, encoded_path: str) -> dict | None:
+    """List a project's other conversation JSONLs ("branches").
+
+    Returns ``{"current": <main sid>, "total": <jsonl count>, "branches":
+    [{"session_id", "file_mtime", "label"}, ...]}`` - the current main
+    session excluded, newest first, ALL of them (the frontend shows the 5
+    most recent in the submenu and the full list in the "More..." popup).
+    The label prefers the branch's own ``custom-title`` record, then the
+    ``sessions-index.json`` summary, then the first 8 chars of the session
+    id. Returns None on invalid path or when no main session resolves.
+    """
+    project_dir = _safe_project_dir(claude_root, encoded_path)
+    if project_dir is None:
+        return None
+    index_path = project_dir / INDEX_FILENAME
+    index = _load_json(index_path) if index_path.is_file() else None
+    latest = _resolve_latest(project_dir, index)
+    if latest is None:
+        return None
+    current = latest.get("sessionId")
+
+    summaries: dict[str, str] = {}
+    if isinstance(index, dict):
+        for e in index.get("entries") or []:
+            if isinstance(e, dict) and isinstance(e.get("sessionId"), str):
+                summary = e.get("summary")
+                if isinstance(summary, str) and summary.strip():
+                    summaries[e["sessionId"]] = summary
+
+    jsonls = [p for p in project_dir.glob("*.jsonl") if p.stem != current]
+    jsonls.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    branches = []
+    for jsonl in jsonls:
+        sid = jsonl.stem
+        label = (
+            _scan_jsonl_for_custom_title(jsonl)
+            or summaries.get(sid)
+            or sid[:8]
+        )
+        branches.append({
+            "session_id": sid,
+            "file_mtime": int(jsonl.stat().st_mtime * 1000),
+            "label": label,
+        })
+    return {
+        "current": current,
+        "total": len(jsonls) + 1,
+        "branches": branches,
+    }
+
+
+def switch_branch(claude_root: Path, encoded_path: str, session_id: str) -> dict | None:
+    """Make ``session_id`` the project's current conversation.
+
+    Persists by touching the JSONL's mtime so the existing recency
+    resolution (``_resolve_latest``), parallel-session cleanup, and claude's
+    own ``--resume`` picker all agree without extra state. Returns
+    ``{"requested", "current"}`` where ``current`` is re-resolved after the
+    touch - it differs from ``requested`` when the branch's recorded cwd is
+    inconsistent with the project dir (such a branch cannot become current).
+    Returns ``{"error": "branch_not_found"}`` when the JSONL is gone (e.g.
+    removed between menu display and click) and None on invalid input.
+    """
+    if (
+        not isinstance(session_id, str)
+        or not session_id
+        or "/" in session_id
+        or session_id in (".", "..")
+    ):
+        return None
+    project_dir = _safe_project_dir(claude_root, encoded_path)
+    if project_dir is None:
+        return None
+    jsonl = project_dir / f"{session_id}.jsonl"
+    if not jsonl.is_file():
+        return {"error": "branch_not_found"}
+    os.utime(jsonl, None)
+    index_path = project_dir / INDEX_FILENAME
+    index = _load_json(index_path) if index_path.is_file() else None
+    latest = _resolve_latest(project_dir, index)
+    return {
+        "requested": session_id,
+        "current": latest.get("sessionId") if latest else None,
+    }
+
+
 def cleanup_parallel_sessions(
     claude_root: Path, encoded_path: str, to_trash: bool = False
 ) -> int | None:

@@ -301,3 +301,48 @@
   display: block;
   margin: 0 auto;
 }
+
+/* Branch-switch popup: search box over a scrollable branch list. */
+.jp-ClaudeSessionsPanel-branchPopup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 320px;
+}
+
+.jp-ClaudeSessionsPanel-branchSearch {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 6px;
+}
+
+.jp-ClaudeSessionsPanel-branchList {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.jp-ClaudeSessionsPanel-branchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.jp-ClaudeSessionsPanel-branchRow:hover {
+  background: var(--jp-layout-color2);
+}
+
+.jp-ClaudeSessionsPanel-branchLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jp-ClaudeSessionsPanel-branchTime {
+  flex: none;
+  color: var(--jp-ui-font-color2);
+  font-size: var(--jp-ui-font-size0);
+}

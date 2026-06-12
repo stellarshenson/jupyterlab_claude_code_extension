@@ -264,6 +264,103 @@ def test_scan_jsonl_for_custom_title_reads_tail_of_large_file(
     assert sessions_mod._scan_jsonl_for_custom_title(jsonl) == "new"
 
 
+# ---------------------------------------------------------------------------
+# Branch switching (list_branches / switch_branch)
+# ---------------------------------------------------------------------------
+
+
+def _make_branch_project(root: Path, n: int) -> Path:
+    """Project dir with ``n`` JSONLs at distinct ascending mtimes.
+
+    ``sid-<n-1>`` is the newest (the main session); every JSONL records a
+    cwd consistent with the dir name so ``_resolve_latest`` picks purely by
+    recency.
+    """
+    d = root / "projects" / "-home-user-branchy"
+    d.mkdir(parents=True)
+    for i in range(n):
+        jsonl = d / f"sid-{i}.jsonl"
+        jsonl.write_text('{"cwd": "/home/user/branchy"}\n')
+        os.utime(jsonl, (1_000 + i, 1_000 + i))
+    return d
+
+
+def test_list_branches_excludes_main_newest_first(fake_claude: Path) -> None:
+    _make_branch_project(fake_claude, 8)
+    result = sessions_mod.list_branches(fake_claude, "-home-user-branchy")
+    assert result["current"] == "sid-7"
+    assert result["total"] == 8
+    ids = [b["session_id"] for b in result["branches"]]
+    # Newest first, main excluded, ALL returned - the frontend caps the
+    # submenu at 5 and offers the full list in the "More..." popup.
+    assert ids == [f"sid-{i}" for i in range(6, -1, -1)]
+
+
+def test_list_branches_label_preference(fake_claude: Path) -> None:
+    d = _make_branch_project(fake_claude, 4)
+    # sid-2: custom-title in the JSONL wins over everything.
+    (d / "sid-2.jsonl").write_text(
+        '{"cwd": "/home/user/branchy"}\n'
+        '{"type": "custom-title", "customTitle": "renamed branch"}\n'
+    )
+    os.utime(d / "sid-2.jsonl", (1_002, 1_002))
+    # sid-1: no title, index summary is next.
+    (d / "sessions-index.json").write_text(json.dumps({
+        "version": 1,
+        "originalPath": "/home/user/branchy",
+        "entries": [{"sessionId": "sid-1", "summary": "indexed summary"}],
+    }))
+    result = sessions_mod.list_branches(fake_claude, "-home-user-branchy")
+    labels = {b["session_id"]: b["label"] for b in result["branches"]}
+    assert labels["sid-2"] == "renamed branch"
+    assert labels["sid-1"] == "indexed summary"
+    # sid-0: neither - short session id.
+    assert labels["sid-0"] == "sid-0"
+
+
+def test_list_branches_rejects_traversal(fake_claude: Path) -> None:
+    assert sessions_mod.list_branches(fake_claude, "../outside") is None
+    assert sessions_mod.list_branches(fake_claude, "") is None
+
+
+def test_switch_branch_makes_selected_current(fake_claude: Path) -> None:
+    _make_branch_project(fake_claude, 3)
+    result = sessions_mod.switch_branch(fake_claude, "-home-user-branchy", "sid-0")
+    assert result == {"requested": "sid-0", "current": "sid-0"}
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/branchy"]["session_id"] == "sid-0"
+
+
+def test_switch_branch_already_current_is_noop(fake_claude: Path) -> None:
+    _make_branch_project(fake_claude, 3)
+    result = sessions_mod.switch_branch(fake_claude, "-home-user-branchy", "sid-2")
+    assert result == {"requested": "sid-2", "current": "sid-2"}
+
+
+def test_switch_branch_missing_jsonl_reports_not_found(fake_claude: Path) -> None:
+    _make_branch_project(fake_claude, 2)
+    result = sessions_mod.switch_branch(fake_claude, "-home-user-branchy", "gone")
+    assert result == {"error": "branch_not_found"}
+
+
+def test_switch_branch_rejects_traversal(fake_claude: Path) -> None:
+    _make_branch_project(fake_claude, 2)
+    assert sessions_mod.switch_branch(fake_claude, "../x", "sid-0") is None
+    assert sessions_mod.switch_branch(
+        fake_claude, "-home-user-branchy", "../../etc/passwd"
+    ) is None
+    assert sessions_mod.switch_branch(fake_claude, "-home-user-branchy", "") is None
+
+
+def test_removed_current_falls_back_to_next_most_recent(fake_claude: Path) -> None:
+    """Edge: the current conversation's JSONL is removed externally - the
+    next most recent one becomes current on the following listing."""
+    d = _make_branch_project(fake_claude, 3)
+    (d / "sid-2.jsonl").unlink()
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/branchy"]["session_id"] == "sid-1"
+
+
 def test_session_state_picks_latest_updated_at(fake_claude: Path) -> None:
     """When multiple pid files share a cwd, the record with the highest
     ``updatedAt`` wins (used for live_pid / session_id resolution)."""
@@ -829,3 +926,42 @@ async def test_launch_terminal_rejects_blank_session_id(
             method="POST", body=body,
         )
     assert "400" in str(exc.value)
+
+
+async def test_branches_endpoint_lists_branches(
+    jp_fetch, patched_claude_dir
+) -> None:
+    _make_branch_project(patched_claude_dir, 3)
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "sessions", "branches",
+        params={"encoded_path": "-home-user-branchy"},
+    )
+    assert response.code == 200
+    payload = json.loads(response.body)
+    assert payload["current"] == "sid-2"
+    assert [b["session_id"] for b in payload["branches"]] == ["sid-1", "sid-0"]
+
+
+async def test_switch_endpoint_switches_and_404s_on_missing(
+    jp_fetch, patched_claude_dir
+) -> None:
+    _make_branch_project(patched_claude_dir, 3)
+    body = json.dumps({
+        "encoded_path": "-home-user-branchy", "session_id": "sid-0",
+    })
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "sessions", "switch",
+        method="POST", body=body,
+    )
+    assert response.code == 200
+    assert json.loads(response.body) == {"requested": "sid-0", "current": "sid-0"}
+
+    body = json.dumps({
+        "encoded_path": "-home-user-branchy", "session_id": "gone",
+    })
+    with pytest.raises(Exception) as exc:
+        await jp_fetch(
+            "jupyterlab-claude-code-extension", "sessions", "switch",
+            method="POST", body=body,
+        )
+    assert "404" in str(exc.value)

@@ -122,6 +122,73 @@ describe('launch spinner dismiss contract', () => {
     });
   });
 
+  /**
+   * Contract for branch switching: the context menu is rebuilt on every
+   * open (Lumino submenu items have no isVisible hook), the branch
+   * submenu is repopulated from a fresh sessions/branches fetch, the
+   * row name carries the conversation count only when branches exist,
+   * and _switchBranch always resyncs the list - including after a 404
+   * for a branch that vanished between menu display and click.
+   */
+  describe('branch switching contract', () => {
+    const openMenu = (widgetSrc.match(
+      /private async _openContextMenu[\s\S]*?\n  \}/
+    ) ?? [''])[0];
+    const switchBranch = (widgetSrc.match(
+      /private async _switchBranch[\s\S]*?\n  \}/
+    ) ?? [''])[0];
+
+    it('shows the conversation count only when the project has branches', () => {
+      expect(widgetSrc).toMatch(
+        /session\.extra_sessions > 0\s*\?\s*`\$\{this\._lookupName\(session\)\} \(\$\{session\.extra_sessions \+ 1\}\)`/
+      );
+    });
+
+    it('rebuilds submenu items from a fresh branches fetch on open', () => {
+      expect(openMenu).toMatch(/sessions\/branches\?encoded_path=/);
+      expect(openMenu).toMatch(/_branchSubmenu\.clearItems\(\)/);
+      expect(openMenu).toMatch(/_rebuildContextMenu\(hasBranches\)/);
+    });
+
+    it('caps the submenu at 5 and adds More... beyond that', () => {
+      expect(openMenu).toMatch(/\.slice\(0, 5\)/);
+      expect(openMenu).toMatch(
+        /branches\.length > 5[\s\S]*?switch-branch-more/
+      );
+    });
+
+    it('More... popup filters by label or session id and switches on click', () => {
+      const popup = (widgetSrc.match(
+        /private _showBranchPopup[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(popup).toMatch(/createElement\('input'\)/);
+      expect(popup).toMatch(/label\.toLowerCase\(\)\.includes\(needle\)/);
+      expect(popup).toMatch(/session_id\.toLowerCase\(\)\.includes\(needle\)/);
+      expect(popup).toMatch(
+        /dialog\.dispose\(\);\s*void this\._switchBranch\(b\.session_id\)/
+      );
+    });
+
+    it('opens the menu without the submenu when the fetch fails', () => {
+      expect(openMenu).toMatch(/catch[\s\S]*?hasBranches = false/);
+    });
+
+    it('resyncs the session list after every switch attempt', () => {
+      expect(switchBranch).toMatch(/finally[\s\S]*?await this\._fetch\(\)/);
+    });
+
+    it('reports a removed branch distinctly via the 404 status', () => {
+      expect(switchBranch).toMatch(/status === 404/);
+      expect(switchBranch).toMatch(/Branch no longer exists/);
+    });
+
+    it('warns when the resolved current differs from the requested branch', () => {
+      expect(switchBranch).toMatch(
+        /result\.current !== result\.requested[\s\S]*?Notification\.warning/
+      );
+    });
+  });
+
   it('_doResumeInTerminal dismisses spinner via dispose(), not resolve()', () => {
     expect(widgetSrc).toMatch(/spinner\.dispose\(\)/);
     expect(widgetSrc).not.toMatch(/spinner\.resolve\(\)/);

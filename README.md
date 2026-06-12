@@ -20,6 +20,7 @@ Browse, resume, and manage your Claude Code sessions from a JupyterLab side pane
 - **Favorites** - star projects you keep coming back to via the right-click menu
 - **Remove** - drop a project's Claude history from the panel via the right-click menu; the history folder is moved to the trash (it honours JupyterLab's "move files to trash" setting), not deleted permanently
 - **Clean up parallel sessions** - when a project has accumulated extra sessions beyond the main one, a right-click menu item (showing the count in brackets) removes them all, keeping only the main session; removed files honour the same trash setting
+- **Switch conversation branch** - a right-click submenu lists a project's other conversations (5 most recent, with a searchable "More..." popup for longer lists) and switches the row's current one; rows with multiple conversations show the count in brackets after the name, e.g. `workspace (2)`
 - **Search** - fuzzy filter toggled by the funnel button next to refresh
 - **Presentation modes** - label rows by session name (so a `/rename` shows through), folder name, or path relative to the JupyterLab root
 - **Hover tooltip** with project path, last activity, message count, branch, and session id

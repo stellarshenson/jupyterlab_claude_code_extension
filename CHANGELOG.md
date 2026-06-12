@@ -4,6 +4,16 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.2] - 2026-06-12
+
+### Added
+
+- "Switch Conversation Branch" context-menu submenu: lists a project's other conversations (parallel session JSONLs) newest first, 5 most recent in the submenu, with a "More... (N total)" item opening a searchable popup over the full list; selecting one makes it the row's current conversation by touching its mtime, so recency resolution, parallel-session cleanup and claude's own --resume picker all agree
+- Conversation count in brackets after the row name (e.g. `workspace (2)`) and a `Conversations: N` tooltip line, shown only when a project has more than one conversation
+- Backend endpoints `GET sessions/branches` and `POST sessions/switch` (404 `branch_not_found` for a branch removed between menu display and click); branch labels prefer the custom title, then the index summary, then a short session id
+- Acceptance criteria document `docs/acc-crit-branch-switching.md` covering the edge cases: removed branch, externally removed current conversation, switch to already-current, cwd-inconsistent branch
+- Ten backend and eight frontend tests for the above
+
 ## [1.1.31] - 2026-06-12
 
 ### Fixed

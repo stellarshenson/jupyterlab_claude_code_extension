@@ -256,6 +256,63 @@ class SessionCleanupHandler(APIHandler):
         self.finish(json.dumps({"removed_count": removed}))
 
 
+class SessionBranchesHandler(APIHandler):
+    """List a project's other conversation JSONLs ("branches").
+
+    ``GET sessions/branches?encoded_path=-home-lab-foo`` returns
+    ``{"current", "total", "branches": [{"session_id", "file_mtime",
+    "label"}]}`` - newest first, current main excluded. The frontend
+    shows the 5 most recent in the submenu and the rest via "More...".
+    """
+
+    @tornado.web.authenticated
+    def get(self) -> None:
+        encoded_path = self.get_query_argument("encoded_path", default="")
+        result = sessions_mod.list_branches(sessions_mod.claude_dir(), encoded_path)
+        if result is None:
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_encoded_path"}))
+            return
+        self.finish(json.dumps(result))
+
+
+class SessionSwitchHandler(APIHandler):
+    """Switch a project's current conversation to another branch.
+
+    Body: ``{"encoded_path": "-home-lab-foo", "session_id": "<uuid>"}``.
+    Touches the branch JSONL's mtime so the recency resolution makes it the
+    row's main session. 404 ``branch_not_found`` when the JSONL no longer
+    exists (removed between menu display and click).
+    """
+
+    @tornado.web.authenticated
+    def post(self) -> None:
+        try:
+            body = json.loads(self.request.body or b"{}")
+        except json.JSONDecodeError:
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_json"}))
+            return
+        encoded_path = body.get("encoded_path")
+        session_id = body.get("session_id")
+        if not isinstance(encoded_path, str) or not isinstance(session_id, str):
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_body"}))
+            return
+        result = sessions_mod.switch_branch(
+            sessions_mod.claude_dir(), encoded_path, session_id
+        )
+        if result is None:
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_body"}))
+            return
+        if result.get("error") == "branch_not_found":
+            self.set_status(404)
+            self.finish(json.dumps(result))
+            return
+        self.finish(json.dumps(result))
+
+
 class TerminalCwdHandler(APIHandler):
     """Return the cwd of the deepest shell child of a JL terminal.
 
@@ -367,6 +424,8 @@ def setup_route_handlers(web_app) -> None:
         (url_path_join(base_url, URL_PREFIX, "sessions", "favourite"), SessionFavouriteHandler),
         (url_path_join(base_url, URL_PREFIX, "sessions", "remove"), SessionRemoveHandler),
         (url_path_join(base_url, URL_PREFIX, "sessions", "cleanup"), SessionCleanupHandler),
+        (url_path_join(base_url, URL_PREFIX, "sessions", "branches"), SessionBranchesHandler),
+        (url_path_join(base_url, URL_PREFIX, "sessions", "switch"), SessionSwitchHandler),
         (
             url_path_join(base_url, URL_PREFIX, "terminal-cwd", r"([^/]+)"),
             TerminalCwdHandler,

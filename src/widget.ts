@@ -24,12 +24,15 @@ import {
   starFilledIcon
 } from './icons';
 import {
+  IBranch,
+  IBranchesResponse,
   IFavouriteResponse,
   ILaunchTerminalResponse,
   ICleanupResponse,
   IRemoveResponse,
   ISession,
-  ISessionsListResponse
+  ISessionsListResponse,
+  ISwitchResponse
 } from './types';
 
 const POLL_INTERVAL_MS = 30_000;
@@ -948,7 +951,11 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
     const name = document.createElement('span');
     name.className = 'jp-ClaudeSessionsPanel-name';
-    name.textContent = this._lookupName(session);
+    // Conversation count in brackets - only when the project has branches.
+    name.textContent =
+      session.extra_sessions > 0
+        ? `${this._lookupName(session)} (${session.extra_sessions + 1})`
+        : this._lookupName(session);
     row.appendChild(name);
 
     // No star in the Favorites section - every row there is a favorite
@@ -974,7 +981,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
       }
       this._activeSession = session;
       this._setActiveRow(row);
-      this._contextMenu.open(e.clientX, e.clientY);
+      void this._openContextMenu(session, e.clientX, e.clientY);
     });
 
     return row;
@@ -992,6 +999,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
     }
     if (s.message_count) {
       lines.push(`Messages: ${s.message_count}`);
+    }
+    if (s.extra_sessions > 0) {
+      lines.push(`Conversations: ${s.extra_sessions + 1}`);
     }
     if (s.git_branch) {
       lines.push(`Branch: ${s.git_branch}`);
@@ -1180,6 +1190,23 @@ export class ClaudeCodeSessionsWidget extends Widget {
       }
     });
 
+    this._commands.addCommand('claude-code-sessions:switch-branch', {
+      label: args => String(args.label ?? ''),
+      execute: args => {
+        const sessionId = String(args.session_id ?? '');
+        if (sessionId) {
+          void this._switchBranch(sessionId);
+        }
+      }
+    });
+
+    this._commands.addCommand('claude-code-sessions:switch-branch-more', {
+      label: () => `More... (${this._lastBranches.length} total)`,
+      execute: () => {
+        void this._showBranchPopup(this._lastBranches);
+      }
+    });
+
     this._commands.addCommand('claude-code-sessions:remove', {
       label: 'Remove from Claude',
       icon: removeIcon,
@@ -1212,8 +1239,31 @@ export class ClaudeCodeSessionsWidget extends Widget {
       command: 'claude-code-sessions:new-session-dangerous'
     });
 
+    // Submenu listing the project's other conversations ("branches") -
+    // items are rebuilt on every context-menu open from a fresh
+    // sessions/branches fetch.
+    this._branchSubmenu = new Menu({ commands: this._commands });
+    this._branchSubmenu.addClass('jp-ClaudeSessionsContextMenu');
+    this._branchSubmenu.title.label = 'Switch Conversation Branch';
+
     this._contextMenu = new Menu({ commands: this._commands });
     this._contextMenu.addClass('jp-ClaudeSessionsContextMenu');
+    this._rebuildContextMenu(false);
+
+    this._contextMenu.aboutToClose.connect(() => {
+      // Only clear the visual highlight - DO NOT null _activeSession.
+      // Lumino fires aboutToClose BEFORE the activated item's command runs,
+      // so the command callback still needs to read _activeSession. The
+      // field is overwritten on the next contextmenu open.
+      this._setActiveRow(null);
+    });
+  }
+
+  /** Rebuild the context menu's items. Lumino submenu-type items have no
+   * ``isVisible`` hook, so the menu is rebuilt per open and the branch
+   * submenu inserted only when the row actually has branches. */
+  private _rebuildContextMenu(withBranches: boolean): void {
+    this._contextMenu.clearItems();
     this._contextMenu.addItem({ command: 'claude-code-sessions:resume' });
     this._contextMenu.addItem({
       command: 'claude-code-sessions:resume-dangerous'
@@ -1229,18 +1279,171 @@ export class ClaudeCodeSessionsWidget extends Widget {
     });
     this._contextMenu.addItem({ command: 'claude-code-sessions:copy-path' });
     this._contextMenu.addItem({ type: 'separator' });
+    if (withBranches) {
+      this._contextMenu.addItem({
+        type: 'submenu',
+        submenu: this._branchSubmenu
+      });
+    }
     this._contextMenu.addItem({
       command: 'claude-code-sessions:cleanup-parallel'
     });
     this._contextMenu.addItem({ command: 'claude-code-sessions:remove' });
+  }
 
-    this._contextMenu.aboutToClose.connect(() => {
-      // Only clear the visual highlight - DO NOT null _activeSession.
-      // Lumino fires aboutToClose BEFORE the activated item's command runs,
-      // so the command callback still needs to read _activeSession. The
-      // field is overwritten on the next contextmenu open.
-      this._setActiveRow(null);
+  /** Open the row context menu, populating the branch submenu first when
+   * the project has more than one conversation. On a fetch failure the
+   * menu opens without the submenu. */
+  private async _openContextMenu(
+    session: ISession,
+    x: number,
+    y: number
+  ): Promise<void> {
+    let hasBranches = false;
+    if (session.extra_sessions > 0) {
+      try {
+        const data = await requestAPI<IBranchesResponse>(
+          `sessions/branches?encoded_path=${encodeURIComponent(session.encoded_path)}`,
+          this._serverSettings,
+          { cache: 'no-store' }
+        );
+        this._lastBranches = data.branches;
+        this._branchSubmenu.clearItems();
+        // The submenu shows only the 5 most recent; the full list lives
+        // behind "More..." in a searchable popup.
+        for (const b of data.branches.slice(0, 5)) {
+          this._branchSubmenu.addItem({
+            command: 'claude-code-sessions:switch-branch',
+            args: {
+              session_id: b.session_id,
+              label: `${b.label} - ${this._formatRelativeTime(b.file_mtime)}`
+            }
+          });
+        }
+        if (data.branches.length > 5) {
+          this._branchSubmenu.addItem({ type: 'separator' });
+          this._branchSubmenu.addItem({
+            command: 'claude-code-sessions:switch-branch-more'
+          });
+        }
+        hasBranches = data.branches.length > 0;
+      } catch {
+        hasBranches = false;
+      }
+    }
+    this._rebuildContextMenu(hasBranches);
+    this._contextMenu.open(x, y);
+  }
+
+  /** Popup with the project's full branch list - browse and filter when
+   * the list is too large for the submenu. Clicking an entry switches. */
+  private _showBranchPopup(branches: IBranch[]): void {
+    const body = document.createElement('div');
+    body.className = 'jp-ClaudeSessionsPanel-branchPopup';
+
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.placeholder = 'Filter branches...';
+    search.className = 'jp-ClaudeSessionsPanel-branchSearch';
+    body.appendChild(search);
+
+    const list = document.createElement('div');
+    list.className = 'jp-ClaudeSessionsPanel-branchList';
+    body.appendChild(list);
+
+    const bodyWidget = new Widget({ node: body });
+    const dialog = new Dialog({
+      title: 'Switch Conversation Branch',
+      body: bodyWidget,
+      buttons: [Dialog.cancelButton()]
     });
+
+    const render = () => {
+      const needle = search.value.trim().toLowerCase();
+      list.replaceChildren();
+      const matches = branches.filter(
+        b =>
+          !needle ||
+          b.label.toLowerCase().includes(needle) ||
+          b.session_id.toLowerCase().includes(needle)
+      );
+      if (matches.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'jp-ClaudeSessionsPanel-emptySection';
+        empty.textContent = 'No matching branches.';
+        list.appendChild(empty);
+        return;
+      }
+      for (const b of matches) {
+        const row = document.createElement('div');
+        row.className = 'jp-ClaudeSessionsPanel-branchRow';
+        row.title = `Session id: ${b.session_id}`;
+
+        const label = document.createElement('span');
+        label.className = 'jp-ClaudeSessionsPanel-branchLabel';
+        label.textContent = b.label;
+        row.appendChild(label);
+
+        const time = document.createElement('span');
+        time.className = 'jp-ClaudeSessionsPanel-branchTime';
+        time.textContent = this._formatRelativeTime(b.file_mtime);
+        row.appendChild(time);
+
+        row.addEventListener('click', () => {
+          dialog.dispose();
+          void this._switchBranch(b.session_id);
+        });
+        list.appendChild(row);
+      }
+    };
+    search.addEventListener('input', render);
+    render();
+
+    void dialog.launch();
+    search.focus();
+  }
+
+  /** Switch the active row's project to another conversation branch.
+   * The backend touches the branch JSONL's mtime; a refresh then shows
+   * the selected conversation as the row's current one. */
+  private async _switchBranch(sessionId: string): Promise<void> {
+    const session = this._activeSession;
+    if (!session) {
+      return;
+    }
+    try {
+      const result = await requestAPI<ISwitchResponse>(
+        'sessions/switch',
+        this._serverSettings,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            encoded_path: session.encoded_path,
+            session_id: sessionId
+          })
+        }
+      );
+      if (result.current !== result.requested) {
+        // The branch's recorded cwd is inconsistent with the project dir,
+        // so the recency resolution cannot make it current.
+        Notification.warning(
+          'Branch cannot become current - its recorded folder does not match the project.',
+          { autoClose: 4000 }
+        );
+      }
+    } catch (err) {
+      const notFound =
+        err instanceof ServerConnection.ResponseError &&
+        err.response.status === 404;
+      Notification.error(
+        notFound
+          ? 'Branch no longer exists - the session list has been refreshed.'
+          : `Branch switch failed: ${err}`,
+        { autoClose: 4000 }
+      );
+    } finally {
+      await this._fetch();
+    }
   }
 
   // --------------------------------------------------------------- polling
@@ -1275,6 +1478,8 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private _expanded: Record<SectionKey, boolean> = loadExpanded();
   private _commands!: CommandRegistry;
   private _contextMenu!: Menu;
+  private _branchSubmenu!: Menu;
+  private _lastBranches: IBranch[] = [];
   private _newSessionMenu!: Menu;
   private _activeSession: ISession | null = null;
   private _activeRowEl: HTMLElement | null = null;

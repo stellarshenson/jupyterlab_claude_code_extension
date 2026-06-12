@@ -51,6 +51,28 @@ export interface ICleanupResponse {
   removed_count: number;
 }
 
+export interface IBranch {
+  session_id: string;
+  file_mtime: number;
+  label: string;
+}
+
+export interface IBranchesResponse {
+  current: string;
+  total: number;
+  branches: IBranch[];
+}
+
+export interface ISwitchRequest {
+  encoded_path: string;
+  session_id: string;
+}
+
+export interface ISwitchResponse {
+  requested: string;
+  current: string | null;
+}
+
 export interface ILaunchTerminalRequest {
   project_path: string;
   /** Omit to start a brand-new claude session instead of resuming one. */
