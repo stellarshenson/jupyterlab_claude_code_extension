@@ -182,6 +182,23 @@ describe('launch spinner dismiss contract', () => {
       expect(switchBranch).toMatch(/Branch no longer exists/);
     });
 
+    it('shows last activity on session rows via the shared formatter', () => {
+      expect(widgetSrc).toMatch(
+        /jp-ClaudeSessionsPanel-rowTime[\s\S]*?_formatRelativeTime\(session\.file_mtime\)/
+      );
+    });
+
+    it('formats relative time as now / m / h / d ago, no date fallback', () => {
+      const fmt = (widgetSrc.match(
+        /private _formatRelativeTime[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(fmt).toMatch(/return 'now'/);
+      expect(fmt).toMatch(/m ago/);
+      expect(fmt).toMatch(/h ago/);
+      expect(fmt).toMatch(/d ago/);
+      expect(fmt).not.toMatch(/toLocaleDateString/);
+    });
+
     it('warns when the resolved current differs from the requested branch', () => {
       expect(switchBranch).toMatch(
         /result\.current !== result\.requested[\s\S]*?Notification\.warning/

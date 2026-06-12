@@ -958,6 +958,13 @@ export class ClaudeCodeSessionsWidget extends Widget {
         : this._lookupName(session);
     row.appendChild(name);
 
+    if (session.file_mtime) {
+      const time = document.createElement('span');
+      time.className = 'jp-ClaudeSessionsPanel-rowTime';
+      time.textContent = this._formatRelativeTime(session.file_mtime);
+      row.appendChild(time);
+    }
+
     // No star in the Favorites section - every row there is a favorite
     // by definition; stars are an indicator only useful in Recent/All.
     if (session.favourite && sectionKey !== 'favourites') {
@@ -1050,7 +1057,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
     }
     const diff = Date.now() - epochMs;
     if (diff < 60_000) {
-      return 'just now';
+      return 'now';
     }
     if (diff < 3_600_000) {
       return `${Math.floor(diff / 60_000)}m ago`;
@@ -1058,10 +1065,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
     if (diff < 86_400_000) {
       return `${Math.floor(diff / 3_600_000)}h ago`;
     }
-    if (diff < 30 * 86_400_000) {
-      return `${Math.floor(diff / 86_400_000)}d ago`;
-    }
-    return new Date(epochMs).toLocaleDateString();
+    return `${Math.floor(diff / 86_400_000)}d ago`;
   }
 
   private _setRefreshSpinning(on: boolean): void {

@@ -346,3 +346,11 @@
   color: var(--jp-ui-font-color2);
   font-size: var(--jp-ui-font-size0);
 }
+
+/* Last-activity time on session rows - dim, right of the name. */
+.jp-ClaudeSessionsPanel-rowTime {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  color: var(--jp-ui-font-color2);
+  font-size: var(--jp-ui-font-size0);
+}

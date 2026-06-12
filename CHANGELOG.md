@@ -4,6 +4,16 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.4] - 2026-06-12
+
+### Added
+
+- Session rows show their last activity as a dim relative time next to the name: `now` within the last minute, then `<n>m ago` / `<n>h ago` / `<n>d ago`
+
+### Changed
+
+- The shared relative-time format (branch submenu, "More..." popup, tooltip) follows the same simple buckets: `just now` became `now` and dates older than 30 days read `<n>d ago` instead of a locale date
+
 ## [1.2.2] - 2026-06-12
 
 ### Added
