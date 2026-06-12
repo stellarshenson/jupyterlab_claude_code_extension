@@ -4,6 +4,13 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.12] - 2026-06-12
+
+### Added
+
+- Companion CLI `jupyterlab_claude_code install-claude-statusline`: downloads the powerline statusline from its home project (https://github.com/stellarshenson/claude-code-statusline) into `~/.claude` (or `--claude-dir`) after an explicit `Proceed? [y/N]` confirmation (`--yes` skips), marks it executable and merges the `statusLine` block into `settings.json` preserving all other settings; invalid existing settings JSON or a non-script download abort with nothing written
+- README section documenting the statusline install one-liner
+
 ## [1.2.9] - 2026-06-12
 
 ### Added

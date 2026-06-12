@@ -26,6 +26,9 @@ dependencies = [
 ]
 dynamic = ["version", "description", "authors", "urls", "keywords"]
 
+[project.scripts]
+jupyterlab_claude_code = "jupyterlab_claude_code_extension.cli:main"
+
 [project.optional-dependencies]
 dev = [
 ]
