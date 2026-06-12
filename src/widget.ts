@@ -19,6 +19,7 @@ import { requestAPI } from './request';
 import {
   addIcon,
   branchIcon,
+  switchIcon,
   claudeIcon,
   filterIcon,
   refreshIcon,
@@ -1302,6 +1303,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._branchSubmenu = new Menu({ commands: this._commands });
     this._branchSubmenu.addClass('jp-ClaudeSessionsContextMenu');
     this._branchSubmenu.title.label = 'Switch and Manage Sessions';
+    this._branchSubmenu.title.icon = switchIcon;
 
     // Submenu grouping the two branch-session launch modes.
     this._branchSessionMenu = new Menu({ commands: this._commands });
