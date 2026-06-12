@@ -190,6 +190,7 @@ def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
 
     sid = chosen.stem
     fs_mtime = int(chosen.stat().st_mtime * 1000)
+    custom_title = _scan_jsonl_for_custom_title(chosen)
 
     indexed: dict | None = None
     if isinstance(index, dict):
@@ -203,6 +204,7 @@ def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
         latest["fileMtime"] = max(int(latest.get("fileMtime") or 0), fs_mtime)
         if chosen_cwd:
             latest["projectPath"] = chosen_cwd
+        latest["customTitle"] = custom_title
         return latest
 
     return {
@@ -216,6 +218,7 @@ def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
         "modified": None,
         "gitBranch": None,
         "projectPath": chosen_cwd,
+        "customTitle": custom_title,
     }
 
 
@@ -269,6 +272,41 @@ def _scan_jsonl_for_latest_cwd(path: Path) -> str | None:
         cwd = record.get("cwd") if isinstance(record, dict) else None
         if isinstance(cwd, str) and cwd:
             latest = cwd
+    return latest
+
+
+def _scan_jsonl_for_custom_title(path: Path) -> str | None:
+    """Return the last ``customTitle`` recorded in the tail of ``path``.
+
+    ``/rename`` appends ``{"type": "custom-title", "customTitle": ...}``
+    records to the session JSONL, and Claude re-appends the record on every
+    resume - so the newest one sits near the end of the file. The pid files
+    in ``~/.claude/sessions/`` do NOT carry the rename (their ``name`` stays
+    ``null``); the JSONL is the only durable store, which is why a renamed
+    session must be resolved here rather than from the session state.
+    """
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as fh:
+            if size > _JSONL_CWD_TAIL_BYTES:
+                fh.seek(-_JSONL_CWD_TAIL_BYTES, os.SEEK_END)
+                fh.readline()  # discard the partial line at the seek point
+            chunk = fh.read()
+    except OSError:
+        return None
+    latest: str | None = None
+    for raw_line in chunk.splitlines():
+        if b'"custom-title"' not in raw_line:
+            continue
+        try:
+            record = json.loads(raw_line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if not isinstance(record, dict) or record.get("type") != "custom-title":
+            continue
+        title = record.get("customTitle")
+        if isinstance(title, str) and title.strip():
+            latest = title
     return latest
 
 
@@ -432,12 +470,19 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
         first_prompt = latest.get("firstPrompt") or ""
 
         state = states.get(project_path) or {}
-        # Honour the session name Claude records (the latest pid record for
-        # this cwd, which is what `/rename` writes). Fall back to the folder
-        # basename only when no session name exists. Path-tail disambiguation
-        # handles basename collisions across rows.
+        # Honour the session's own name. `/rename` persists as a
+        # ``custom-title`` record in the session JSONL, so the chosen JSONL's
+        # title is authoritative for its row. The pid-record ``name`` (older
+        # Claude versions wrote the rename there) is the fallback, then the
+        # folder basename. Path-tail disambiguation handles basename
+        # collisions across rows.
         basename = os.path.basename(project_path) or project_dir.name
-        session_name = state.get("name")
+        custom_title = latest.get("customTitle")
+        session_name = (
+            custom_title
+            if isinstance(custom_title, str) and custom_title.strip()
+            else state.get("name")
+        )
         if isinstance(session_name, str) and session_name.strip():
             name = session_name
             name_source = "session"

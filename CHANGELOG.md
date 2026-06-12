@@ -4,6 +4,13 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.1.31] - 2026-06-12
+
+### Fixed
+
+- Session rows honour `/rename` again: current Claude Code persists the rename as a `custom-title` record in the session JSONL (the pid files' `name` stays null), so the backend now tail-scans the chosen JSONL for the last `customTitle` and prefers it over the pid-record name and the folder basename
+- Three backend tests covering the new resolution (title honoured, title beats a stale pid name, tail scan of a large file)
+
 ## [1.1.29] - 2026-06-11
 
 ### Changed

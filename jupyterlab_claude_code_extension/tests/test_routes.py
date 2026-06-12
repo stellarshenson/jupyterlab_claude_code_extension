@@ -209,6 +209,61 @@ def test_blank_pid_name_falls_back_to_basename(fake_claude: Path) -> None:
     assert rows["/home/user/projA"]["name_source"] == "basename"
 
 
+def test_custom_title_in_jsonl_is_honoured_as_the_row_label(
+    fake_claude: Path,
+) -> None:
+    """Mirrors the live "/home/lab renamed to home" case: `/rename` writes a
+    ``custom-title`` record into the session JSONL while the pid files'
+    ``name`` stays ``null``. The row must read the JSONL title."""
+    a = fake_claude / "projects" / "-home-user-projA"
+    (a / "aaaa-1111.jsonl").write_text(
+        '{"cwd": "/home/user/projA"}\n'
+        '{"type": "custom-title", "customTitle": "home", "sessionId": "aaaa-1111"}\n'
+    )
+    sessions_dir = fake_claude / "sessions"
+    sessions_dir.mkdir()
+    (sessions_dir / "100.json").write_text(json.dumps({
+        "pid": 100, "sessionId": "aaaa-1111", "cwd": "/home/user/projA",
+        "updatedAt": 1, "name": None,
+    }))
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/projA"]["name"] == "home"
+    assert rows["/home/user/projA"]["name_source"] == "session"
+
+
+def test_custom_title_beats_pid_name(fake_claude: Path) -> None:
+    """The chosen JSONL's ``custom-title`` is authoritative for its row -
+    a (possibly stale) pid-record name for the same cwd must not override
+    it."""
+    a = fake_claude / "projects" / "-home-user-projA"
+    (a / "aaaa-1111.jsonl").write_text(
+        '{"cwd": "/home/user/projA"}\n'
+        '{"type": "custom-title", "customTitle": "renamed", "sessionId": "aaaa-1111"}\n'
+    )
+    sessions_dir = fake_claude / "sessions"
+    sessions_dir.mkdir()
+    (sessions_dir / "100.json").write_text(json.dumps({
+        "pid": 100, "sessionId": "aaaa-1111", "cwd": "/home/user/projA",
+        "updatedAt": 1, "name": "stale-pid-name",
+    }))
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/projA"]["name"] == "renamed"
+
+
+def test_scan_jsonl_for_custom_title_reads_tail_of_large_file(
+    tmp_path: Path,
+) -> None:
+    """The scanner reads only the file tail; the last title in range wins."""
+    jsonl = tmp_path / "s.jsonl"
+    filler = json.dumps({"type": "noise", "data": "x" * 1000})
+    lines = [filler] * 200
+    lines.append('{"type": "custom-title", "customTitle": "old"}')
+    lines.append(filler)
+    lines.append('{"type": "custom-title", "customTitle": "new"}')
+    jsonl.write_text("\n".join(lines) + "\n")
+    assert sessions_mod._scan_jsonl_for_custom_title(jsonl) == "new"
+
+
 def test_session_state_picks_latest_updated_at(fake_claude: Path) -> None:
     """When multiple pid files share a cwd, the record with the highest
     ``updatedAt`` wins (used for live_pid / session_id resolution)."""
