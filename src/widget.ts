@@ -996,12 +996,14 @@ export class ClaudeCodeSessionsWidget extends Widget {
       row.appendChild(star);
     }
 
-    if (session.file_mtime) {
-      const time = document.createElement('span');
-      time.className = 'jp-ClaudeSessionsPanel-rowTime';
-      time.textContent = this._formatRelativeTime(session.file_mtime);
-      row.appendChild(time);
-    }
+    // Always present (empty without an mtime) so the star column keeps
+    // the same anchor across every row in the panel.
+    const time = document.createElement('span');
+    time.className = 'jp-ClaudeSessionsPanel-rowTime';
+    time.textContent = session.file_mtime
+      ? this._formatRelativeTime(session.file_mtime)
+      : '';
+    row.appendChild(time);
 
     row.addEventListener('click', () => {
       if (removing) {
@@ -1252,13 +1254,12 @@ export class ClaudeCodeSessionsWidget extends Widget {
     });
 
     this._commands.addCommand('claude-code-sessions:branch-session', {
-      label: 'Branch Session...',
-      icon: branchIcon,
+      label: 'Normal',
       execute: () => void this._branchSession(false)
     });
 
     this._commands.addCommand('claude-code-sessions:branch-session-dangerous', {
-      label: 'Branch Session (Skip Permissions)...',
+      label: 'Skip Permissions',
       icon: shieldIcon,
       execute: () => void this._branchSession(true)
     });
@@ -1302,6 +1303,18 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._branchSubmenu.addClass('jp-ClaudeSessionsContextMenu');
     this._branchSubmenu.title.label = 'Switch and Manage Sessions';
 
+    // Submenu grouping the two branch-session launch modes.
+    this._branchSessionMenu = new Menu({ commands: this._commands });
+    this._branchSessionMenu.addClass('jp-ClaudeSessionsContextMenu');
+    this._branchSessionMenu.title.label = 'Branch Session';
+    this._branchSessionMenu.title.icon = branchIcon;
+    this._branchSessionMenu.addItem({
+      command: 'claude-code-sessions:branch-session'
+    });
+    this._branchSessionMenu.addItem({
+      command: 'claude-code-sessions:branch-session-dangerous'
+    });
+
     this._contextMenu = new Menu({ commands: this._commands });
     this._contextMenu.addClass('jp-ClaudeSessionsContextMenu');
     this._rebuildContextMenu(false);
@@ -1342,10 +1355,8 @@ export class ClaudeCodeSessionsWidget extends Widget {
       });
     }
     this._contextMenu.addItem({
-      command: 'claude-code-sessions:branch-session'
-    });
-    this._contextMenu.addItem({
-      command: 'claude-code-sessions:branch-session-dangerous'
+      type: 'submenu',
+      submenu: this._branchSessionMenu
     });
     this._contextMenu.addItem({
       command: 'claude-code-sessions:cleanup-parallel'
@@ -1803,6 +1814,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private _commands!: CommandRegistry;
   private _contextMenu!: Menu;
   private _branchSubmenu!: Menu;
+  private _branchSessionMenu!: Menu;
   private _lastBranches: IBranch[] = [];
   private _lastBranchesCurrent = '';
   private _newSessionMenu!: Menu;

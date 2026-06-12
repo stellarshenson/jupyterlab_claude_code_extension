@@ -4,6 +4,17 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.17] - 2026-06-12
+
+### Changed
+
+- "Branch Session" is now a single context-menu submenu (branch icon) with "Normal" and "Skip Permissions" (shield icon) entries instead of two separate main-menu items; ellipsis dropped from the labels
+- Time column tightened from 52px to a fixed 4em with nowrap (no more dead space between the favourite star and the time, no wrapped two-digit day labels bleeding into the next row)
+
+### Fixed
+
+- Favourite stars line up vertically across the entire panel: every row keeps the time slot (empty when a session has no recorded activity) and every section list reserves the scrollbar gutter, so a scrolling section no longer shifts its columns
+
 ## [1.2.12] - 2026-06-12
 
 ### Added

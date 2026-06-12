@@ -318,12 +318,22 @@ describe('launch spinner dismiss contract', () => {
       const rowTime = (css.match(
         /\.jp-ClaudeSessionsPanel-rowTime \{[\s\S]*?\}/
       ) ?? [''])[0];
-      expect(rowTime).toMatch(/width: 52px/);
+      expect(rowTime).toMatch(/width: 4em/);
+      expect(rowTime).toMatch(/white-space: nowrap/);
       expect(rowTime).toMatch(/text-align: right/);
       const branchTime = (css.match(
         /\.jp-ClaudeSessionsPanel-branchTime \{[\s\S]*?\}/
       ) ?? [''])[0];
-      expect(branchTime).toMatch(/width: 52px/);
+      expect(branchTime).toMatch(/width: 4em/);
+      expect(branchTime).toMatch(/white-space: nowrap/);
+      // Stars line up vertically across the entire panel: every row keeps
+      // the time slot (empty without an mtime) and every section reserves
+      // the scrollbar gutter.
+      expect(widgetSrc).toMatch(/time\.textContent = session\.file_mtime\s*\?/);
+      const list = (css.match(/\.jp-ClaudeSessionsPanel-list \{[\s\S]*?\}/) ?? [
+        ''
+      ])[0];
+      expect(list).toMatch(/scrollbar-gutter: stable/);
       expect(branchTime).toMatch(/text-align: right/);
     });
 
@@ -337,14 +347,20 @@ describe('launch spinner dismiss contract', () => {
       );
     });
 
-    it('branch session commands exist in normal and skip-permissions modes', () => {
+    it('branch session is a submenu with normal and skip-permissions entries', () => {
       expect(widgetSrc).toMatch(/claude-code-sessions:branch-session'/);
       expect(widgetSrc).toMatch(
         /claude-code-sessions:branch-session-dangerous/
       );
       expect(widgetSrc).toMatch(
-        /Branch Session \(Skip Permissions\)\.\.\.[\s\S]{0,80}?icon: shieldIcon/
+        /_branchSessionMenu\.title\.label = 'Branch Session'/
       );
+      expect(widgetSrc).toMatch(
+        /label: 'Skip Permissions',\s*icon: shieldIcon/
+      );
+      expect(widgetSrc).toMatch(/submenu: this\._branchSessionMenu/);
+      // No ellipsis on the branch-session labels.
+      expect(widgetSrc).not.toMatch(/Branch Session\.\.\./);
     });
 
     it('branch session asks for a name and launches a known fork id', () => {
