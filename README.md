@@ -8,9 +8,20 @@
 [![Brought To You By KOLOMOLO](https://img.shields.io/badge/Brought%20To%20You%20By-KOLOMOLO-00ffff?style=flat)](https://kolomolo.com)
 [![Donate PayPal](https://img.shields.io/badge/Donate-PayPal-blue?style=flat)](https://www.paypal.com/donate/?hosted_button_id=B4KPBJDLLXTSA)
 
-Browse, resume, and manage your Claude Code sessions from a JupyterLab side panel. One click reactivates the right terminal, no duplicate tabs, with a live indicator showing which sessions are currently active.
+A full Claude Code launcher and manager for JupyterLab. Start, resume, fork, switch, and clean up Claude Code CLI sessions from a side panel - one click lands you in the right terminal with Claude already running, no duplicate tabs, no UUID hunting, with a live indicator showing which sessions are active right now.
 
 ![Claude Code Sessions panel](.resources/screenshot.png)
+
+## Why this extension
+
+One principle: **Anthropic knows best how to build the agent harness; we know best how to make it work in JupyterLab.**
+
+Chat-panel extensions re-implement the agent loop and trail the real tool. This one runs the genuine, unmodified Claude Code CLI in JupyterLab terminals - skills, subagents, MCP, hooks, plan mode, every release the day it lands. The extension owns the JupyterLab side:
+
+- **Launching** - new, resumed, or forked sessions, with or without permission prompts, no wrapper shell, correctly sized before Claude draws its first frame
+- **Finding** - every Claude project in one panel: favourites, search, live activity
+- **Reusing** - clicking a session focuses its existing terminal, never a duplicate
+- **Managing** - parallel conversations: switch, fork with a name, delete - no `--resume` pickers, no raw UUIDs
 
 ## Features
 
@@ -20,8 +31,9 @@ Browse, resume, and manage your Claude Code sessions from a JupyterLab side pane
 - **Favorites** - star projects you keep coming back to via the right-click menu
 - **Remove** - drop a project's Claude history from the panel via the right-click menu; the history folder is moved to the trash (it honours JupyterLab's "move files to trash" setting), not deleted permanently
 - **Clean up parallel sessions** - when a project has accumulated extra sessions beyond the main one, a right-click menu item (showing the count in brackets) removes them all, keeping only the main session; removed files honour the same trash setting
-- **Conversation switcher** - a right-click "Switch and Manage Sessions" submenu lists a project's other conversations by name and short session id, e.g. `home (3f2a1b9c)`, with last-activity time; pick one and it becomes the row's current conversation - the next click resumes exactly that one. The submenu shows the 5 most recent; "Manage Sessions..." opens a searchable popup over the full list where conversations can also be deleted - select one, many, or all via checkboxes, then confirm with a two-step Delete button (removed files honour the trash setting). Rows with multiple conversations show the count in brackets after the name, e.g. `workspace (2)`
-- **Activity at a glance** - each row shows its last activity (`now`, `5m ago`, `2h ago`, `3d ago`); rows active within the last minute light up in the theme's brand colour, rows idle for over a week dim slightly
+- **Conversation switcher** - a right-click "Switch and Manage Sessions" submenu lists a project's other conversations by name and short session id, e.g. `home (3f2a1b9c)`, with last-activity time; pick one and it becomes the row's current conversation - the next click resumes exactly that one. The submenu shows the 5 most recent; "Manage Sessions..." opens a searchable popup over the full list where conversations can also be deleted - select one, many, or all via checkboxes, then confirm with a two-step Delete button (removed files honour the trash setting). Rows with multiple conversations show a branch icon with the count after the name
+- **Branch session** - fork the current conversation into a new named session via the right-click menu (normal or skip-permissions mode); uses Claude's native `--fork-session`, opens in a new terminal, the chosen name is stamped automatically, and the fork becomes the row's current conversation
+- **Activity at a glance** - each row shows its last activity (`now`, `5m ago`, `2h ago`, `3d ago`) in an aligned column, with the favourite star in its own column beside it; rows active within the last minute light up in the theme's brand colour (including the `now` label), rows idle for over a week dim slightly
 - **Search** - fuzzy filter toggled by the funnel button next to refresh
 - **Presentation modes** - label rows by session name (so a `/rename` shows through), folder name, or path relative to the JupyterLab root
 - **Hover tooltip** with project path, last activity, message count, branch, and session id

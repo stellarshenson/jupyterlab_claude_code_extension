@@ -2,6 +2,7 @@ import { JupyterFrontEnd } from '@jupyterlab/application';
 import {
   Clipboard,
   Dialog,
+  InputDialog,
   Notification,
   showDialog
 } from '@jupyterlab/apputils';
@@ -10,12 +11,14 @@ import { IDefaultFileBrowser } from '@jupyterlab/filebrowser';
 import { ITerminalTracker } from '@jupyterlab/terminal';
 import { folderIcon, terminalIcon } from '@jupyterlab/ui-components';
 import { CommandRegistry } from '@lumino/commands';
+import { UUID } from '@lumino/coreutils';
 import { Menu, Widget } from '@lumino/widgets';
 import { Message } from '@lumino/messaging';
 
 import { requestAPI } from './request';
 import {
   addIcon,
+  branchIcon,
   claudeIcon,
   filterIcon,
   refreshIcon,
@@ -963,28 +966,41 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
     const name = document.createElement('span');
     name.className = 'jp-ClaudeSessionsPanel-name';
-    // Conversation count in brackets - only when the project has branches.
-    name.textContent =
-      session.extra_sessions > 0
-        ? `${this._lookupName(session)} (${session.extra_sessions + 1})`
-        : this._lookupName(session);
-    row.appendChild(name);
-
-    if (session.file_mtime) {
-      const time = document.createElement('span');
-      time.className = 'jp-ClaudeSessionsPanel-rowTime';
-      time.textContent = this._formatRelativeTime(session.file_mtime);
-      row.appendChild(time);
+    name.textContent = this._lookupName(session);
+    // Branch icon + total conversation count - only when the project has
+    // branches. Lives inside the name span so it hugs the label text
+    // instead of being flexed to the row's right edge.
+    if (session.extra_sessions > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'jp-ClaudeSessionsPanel-branchBadge';
+      const icon = document.createElement('span');
+      icon.className = 'jp-ClaudeSessionsPanel-branchBadgeIcon';
+      branchIcon.element({ container: icon });
+      badge.appendChild(icon);
+      badge.appendChild(
+        document.createTextNode(String(session.extra_sessions + 1))
+      );
+      name.appendChild(badge);
     }
+    row.appendChild(name);
 
     // No star in the Favorites section - every row there is a favorite
     // by definition; stars are an indicator only useful in Recent/All.
+    // Star sits before the time so the fixed-width time column stays the
+    // rightmost alignment anchor across all rows.
     if (session.favourite && sectionKey !== 'favourites') {
       const star = document.createElement('span');
       star.className = 'jp-ClaudeSessionsPanel-favStar';
       star.title = 'Favorite';
       starFilledIcon.element({ container: star });
       row.appendChild(star);
+    }
+
+    if (session.file_mtime) {
+      const time = document.createElement('span');
+      time.className = 'jp-ClaudeSessionsPanel-rowTime';
+      time.textContent = this._formatRelativeTime(session.file_mtime);
+      row.appendChild(time);
     }
 
     row.addEventListener('click', () => {
@@ -1235,6 +1251,18 @@ export class ClaudeCodeSessionsWidget extends Widget {
       }
     });
 
+    this._commands.addCommand('claude-code-sessions:branch-session', {
+      label: 'Branch Session...',
+      icon: branchIcon,
+      execute: () => void this._branchSession(false)
+    });
+
+    this._commands.addCommand('claude-code-sessions:branch-session-dangerous', {
+      label: 'Branch Session (Skip Permissions)...',
+      icon: shieldIcon,
+      execute: () => void this._branchSession(true)
+    });
+
     this._commands.addCommand('claude-code-sessions:remove', {
       label: 'Remove from Claude',
       icon: removeIcon,
@@ -1313,6 +1341,12 @@ export class ClaudeCodeSessionsWidget extends Widget {
         submenu: this._branchSubmenu
       });
     }
+    this._contextMenu.addItem({
+      command: 'claude-code-sessions:branch-session'
+    });
+    this._contextMenu.addItem({
+      command: 'claude-code-sessions:branch-session-dangerous'
+    });
     this._contextMenu.addItem({
       command: 'claude-code-sessions:cleanup-parallel'
     });
@@ -1592,6 +1626,105 @@ export class ClaudeCodeSessionsWidget extends Widget {
     } finally {
       await this._fetch();
     }
+  }
+
+  /** Fork the active row's current conversation into a new named branch.
+   *
+   * Asks for a name, then launches a terminal running
+   * ``claude --resume <current> --fork-session --session-id <new uuid>`` -
+   * the uuid is generated here so the forked JSONL is known up front. Once
+   * claude materialises the file (polled via sessions/set-title) the chosen
+   * name is stamped as a custom-title record. The fork is the newest JSONL,
+   * so the recency resolution makes it the row's current conversation
+   * without an explicit switch.
+   */
+  private async _branchSession(forceDangerous: boolean): Promise<void> {
+    const session = this._activeSession;
+    if (!session) {
+      return;
+    }
+    const named = await InputDialog.getText({
+      title: 'Branch Session',
+      label: 'Name for the new session',
+      placeholder: this._lookupName(session)
+    });
+    if (!named.button.accept || !named.value || !named.value.trim()) {
+      return;
+    }
+    const title = named.value.trim();
+    const forkId = UUID.uuid4();
+    const spinner = this._showLaunchSpinner();
+    try {
+      const launched = await requestAPI<ILaunchTerminalResponse>(
+        'launch-terminal',
+        this._serverSettings,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            project_path: session.project_path,
+            session_id: session.session_id,
+            fork_session_id: forkId,
+            dangerously_skip_permissions:
+              forceDangerous || this._dangerouslySkip
+          })
+        }
+      );
+      const widget: any = await this._app.commands.execute('terminal:open', {
+        name: launched.terminal_name
+      });
+      if (widget?.id) {
+        this._terminalsByPath.set(session.project_path, widget);
+        this._wireTerminalDisposal(session.project_path, widget);
+        this._focusTerminal(widget);
+      }
+    } catch (err) {
+      this._showError(err);
+      return;
+    } finally {
+      spinner.dispose();
+    }
+    // Stamp the name in the background once the forked JSONL appears -
+    // claude writes it on its first record, typically within seconds.
+    void this._stampForkTitle(session.encoded_path, forkId, title);
+  }
+
+  /** Retry sessions/set-title until the forked JSONL exists (404 while it
+   * does not), then refresh so the row shows the named fork as current. */
+  private async _stampForkTitle(
+    encodedPath: string,
+    sessionId: string,
+    title: string
+  ): Promise<void> {
+    for (let attempt = 0; attempt < 30; attempt++) {
+      try {
+        await requestAPI<{ ok: boolean }>(
+          'sessions/set-title',
+          this._serverSettings,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              encoded_path: encodedPath,
+              session_id: sessionId,
+              title
+            })
+          }
+        );
+        await this._fetch();
+        return;
+      } catch (err) {
+        const notYet =
+          err instanceof ServerConnection.ResponseError &&
+          err.response.status === 404;
+        if (!notYet) {
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    Notification.warning(
+      `Branched session started, but the name "${title}" could not be applied - use /rename in the session.`,
+      { autoClose: 6000 }
+    );
   }
 
   /** Switch the active row's project to another conversation branch.

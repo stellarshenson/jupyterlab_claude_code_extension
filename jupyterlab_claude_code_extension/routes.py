@@ -347,6 +347,49 @@ class SessionDeleteBranchesHandler(APIHandler):
         self.finish(json.dumps({"removed_count": removed}))
 
 
+class SessionSetTitleHandler(APIHandler):
+    """Stamp a conversation with a custom title.
+
+    Body: ``{"encoded_path": "-home-lab-foo", "session_id": "<uuid>",
+    "title": "name"}``. Appends the same ``custom-title`` record claude's
+    ``/rename`` writes. 404 ``branch_not_found`` while the JSONL does not
+    exist yet - the frontend retries until a freshly forked branch
+    materialises on disk.
+    """
+
+    @tornado.web.authenticated
+    def post(self) -> None:
+        try:
+            body = json.loads(self.request.body or b"{}")
+        except json.JSONDecodeError:
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_json"}))
+            return
+        encoded_path = body.get("encoded_path")
+        session_id = body.get("session_id")
+        title = body.get("title")
+        if (
+            not isinstance(encoded_path, str)
+            or not isinstance(session_id, str)
+            or not isinstance(title, str)
+        ):
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_body"}))
+            return
+        result = sessions_mod.set_branch_title(
+            sessions_mod.claude_dir(), encoded_path, session_id, title
+        )
+        if result is None:
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_body"}))
+            return
+        if result is False:
+            self.set_status(404)
+            self.finish(json.dumps({"error": "branch_not_found"}))
+            return
+        self.finish(json.dumps({"ok": True}))
+
+
 class TerminalCwdHandler(APIHandler):
     """Return the cwd of the deepest shell child of a JL terminal.
 
@@ -405,6 +448,7 @@ class LaunchClaudeTerminalHandler(APIHandler):
             return
         project_path = body.get("project_path")
         session_id = body.get("session_id")
+        fork_session_id = body.get("fork_session_id")
         dangerously_skip = bool(body.get("dangerously_skip_permissions"))
         if not isinstance(project_path, str) or not os.path.isdir(project_path):
             self.set_status(400)
@@ -418,6 +462,20 @@ class LaunchClaudeTerminalHandler(APIHandler):
             self.set_status(400)
             self.finish(json.dumps({"error": "invalid_session_id"}))
             return
+        # ``fork_session_id`` branches the resumed conversation into a new
+        # session id chosen by the caller (claude --fork-session
+        # --session-id <uuid>) - so the frontend knows the forked id up
+        # front and can stamp its name once the JSONL appears. Only valid
+        # together with ``session_id``.
+        if fork_session_id is not None and (
+            not isinstance(fork_session_id, str)
+            or not fork_session_id
+            or "/" in fork_session_id
+            or session_id is None
+        ):
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_fork_session_id"}))
+            return
         claude = sessions_mod.claude_binary_available()
         if not claude:
             self.set_status(503)
@@ -429,6 +487,8 @@ class LaunchClaudeTerminalHandler(APIHandler):
             self.finish(json.dumps({"error": "terminal_service_unavailable"}))
             return
         argv = [claude, "--resume", session_id] if session_id else [claude]
+        if fork_session_id:
+            argv += ["--fork-session", "--session-id", fork_session_id]
         if dangerously_skip:
             argv.append("--dangerously-skip-permissions")
         model = terminal_manager.create(
@@ -463,6 +523,10 @@ def setup_route_handlers(web_app) -> None:
         (
             url_path_join(base_url, URL_PREFIX, "sessions", "delete-branches"),
             SessionDeleteBranchesHandler,
+        ),
+        (
+            url_path_join(base_url, URL_PREFIX, "sessions", "set-title"),
+            SessionSetTitleHandler,
         ),
         (
             url_path_join(base_url, URL_PREFIX, "terminal-cwd", r"([^/]+)"),

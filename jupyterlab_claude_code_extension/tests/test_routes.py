@@ -352,6 +352,36 @@ def test_switch_branch_rejects_traversal(fake_claude: Path) -> None:
     assert sessions_mod.switch_branch(fake_claude, "-home-user-branchy", "") is None
 
 
+def test_switch_branch_subdir_cwd_becomes_current(fake_claude: Path) -> None:
+    """A branch whose recorded cwd is a SUBDIRECTORY of the project path is
+    legitimate (claude records cwd per message; work in a subfolder moves
+    the tail cwd) - it must be able to become current, and the row's path
+    stays the project root."""
+    d = _make_branch_project(fake_claude, 3)
+    (d / "sid-0.jsonl").write_text('{"cwd": "/home/user/branchy/sub/dir"}\n')
+    os.utime(d / "sid-0.jsonl", (1_000, 1_000))
+    result = sessions_mod.switch_branch(fake_claude, "-home-user-branchy", "sid-0")
+    assert result == {"requested": "sid-0", "current": "sid-0"}
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/branchy"]["session_id"] == "sid-0"
+
+
+def test_switch_branch_foreign_cwd_cannot_become_current(fake_claude: Path) -> None:
+    """Edge: a sibling-prefix dir (``/home/user/branchy-extra``) and a fully
+    foreign cwd both stay inconsistent - the boundary after the project path
+    must be a real ``/``. Current resolution skips them."""
+    d = _make_branch_project(fake_claude, 3)
+    (d / "sid-0.jsonl").write_text('{"cwd": "/home/user/branchy-extra"}\n')
+    os.utime(d / "sid-0.jsonl", (1_000, 1_000))
+    result = sessions_mod.switch_branch(fake_claude, "-home-user-branchy", "sid-0")
+    assert result["requested"] == "sid-0"
+    assert result["current"] != "sid-0"
+    (d / "sid-1.jsonl").write_text('{"cwd": "/somewhere/else"}\n')
+    os.utime(d / "sid-1.jsonl", (1_001, 1_001))
+    result = sessions_mod.switch_branch(fake_claude, "-home-user-branchy", "sid-1")
+    assert result["current"] != "sid-1"
+
+
 def test_removed_current_falls_back_to_next_most_recent(fake_claude: Path) -> None:
     """Edge: the current conversation's JSONL is removed externally - the
     next most recent one becomes current on the following listing."""
@@ -987,6 +1017,102 @@ async def test_launch_terminal_rejects_blank_session_id(
             method="POST", body=body,
         )
     assert "400" in str(exc.value)
+
+
+async def test_launch_terminal_fork_session_builds_fork_argv(
+    jp_fetch, fake_terminal_manager, tmp_path
+) -> None:
+    body = json.dumps({
+        "project_path": str(tmp_path),
+        "session_id": "sid-1",
+        "fork_session_id": "fork-9",
+    })
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "launch-terminal",
+        method="POST", body=body,
+    )
+    assert response.code == 200
+    cmd = fake_terminal_manager.kwargs["shell_command"]
+    assert cmd[-5:] == [
+        "--resume", "sid-1", "--fork-session", "--session-id", "fork-9",
+    ]
+
+
+async def test_launch_terminal_fork_requires_session_id(
+    jp_fetch, fake_terminal_manager, tmp_path
+) -> None:
+    body = json.dumps({"project_path": str(tmp_path), "fork_session_id": "fork-9"})
+    with pytest.raises(Exception) as exc:
+        await jp_fetch(
+            "jupyterlab-claude-code-extension", "launch-terminal",
+            method="POST", body=body,
+        )
+    assert "400" in str(exc.value)
+
+
+def test_set_branch_title_appends_custom_title(fake_claude: Path) -> None:
+    _make_branch_project(fake_claude, 3)
+    ok = sessions_mod.set_branch_title(
+        fake_claude, "-home-user-branchy", "sid-0", "my fork"
+    )
+    assert ok is True
+    result = sessions_mod.list_branches(fake_claude, "-home-user-branchy")
+    labels = {b["session_id"]: b["label"] for b in result["branches"]}
+    assert labels["sid-0"] == "my fork"
+
+
+def test_set_branch_title_missing_jsonl_returns_false(fake_claude: Path) -> None:
+    _make_branch_project(fake_claude, 2)
+    assert sessions_mod.set_branch_title(
+        fake_claude, "-home-user-branchy", "not-there", "x"
+    ) is False
+
+
+def test_set_branch_title_rejects_invalid_input(fake_claude: Path) -> None:
+    _make_branch_project(fake_claude, 2)
+    assert sessions_mod.set_branch_title(
+        fake_claude, "-home-user-branchy", "../../etc/passwd", "x"
+    ) is None
+    assert sessions_mod.set_branch_title(
+        fake_claude, "-home-user-branchy", "sid-0", "   "
+    ) is None
+    assert sessions_mod.set_branch_title(
+        fake_claude, "../outside", "sid-0", "x"
+    ) is None
+
+
+async def test_set_title_endpoint_stamps_title(
+    jp_fetch, patched_claude_dir
+) -> None:
+    _make_branch_project(patched_claude_dir, 3)
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "sessions", "set-title",
+        method="POST",
+        body=json.dumps({
+            "encoded_path": "-home-user-branchy",
+            "session_id": "sid-1",
+            "title": "named fork",
+        }),
+    )
+    assert response.code == 200
+    assert json.loads(response.body) == {"ok": True}
+
+
+async def test_set_title_endpoint_404_while_jsonl_absent(
+    jp_fetch, patched_claude_dir
+) -> None:
+    _make_branch_project(patched_claude_dir, 2)
+    with pytest.raises(Exception) as exc:
+        await jp_fetch(
+            "jupyterlab-claude-code-extension", "sessions", "set-title",
+            method="POST",
+            body=json.dumps({
+                "encoded_path": "-home-user-branchy",
+                "session_id": "not-yet-there",
+                "title": "named fork",
+            }),
+        )
+    assert "404" in str(exc.value)
 
 
 async def test_branches_endpoint_lists_branches(

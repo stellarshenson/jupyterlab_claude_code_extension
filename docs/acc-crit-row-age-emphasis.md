@@ -18,3 +18,6 @@ Session row name colour reflects last activity: rows active within the last minu
   - log: 2026-06-12 implemented
 - [x] **Edge: missing mtime** - missing/zero `file_mtime` -> no age class, normal colour
   - log: 2026-06-12 implemented
+- [x] **Now label colour** - the `now` time label is rendered in `--jp-brand-color1` via the `jp-mod-recentlyActive` class, same colour as the emphasised name (the `now` bucket and the class share the <60 s threshold)
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release

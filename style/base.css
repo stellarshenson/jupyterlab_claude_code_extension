@@ -199,10 +199,35 @@
 .jp-ClaudeSessionsPanel-dot {
   background-color: var(--jp-success-color1);
   box-shadow: 0 0 4px var(--jp-success-color1);
+
+  /* Softened a touch - full saturation reads too loud next to row text. */
+  opacity: 0.75;
 }
 
 .jp-ClaudeSessionsPanel-dotPlaceholder {
   background-color: transparent;
+}
+
+/* Branch icon + conversation count, hugging the name text inside the
+   ellipsised name span (not flexed to the row edge). */
+.jp-ClaudeSessionsPanel-branchBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  color: var(--jp-ui-font-color2);
+  font-size: var(--jp-ui-font-size0);
+  vertical-align: middle;
+}
+
+.jp-ClaudeSessionsPanel-branchBadgeIcon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.jp-ClaudeSessionsPanel-branchBadgeIcon svg {
+  width: 12px;
+  height: 12px;
 }
 
 .jp-ClaudeSessionsPanel-favStar {
@@ -313,7 +338,18 @@
 .jp-ClaudeSessionsPanel-branchSearch {
   width: 100%;
   box-sizing: border-box;
-  padding: 4px 6px;
+  padding: 2px 6px;
+  background: var(--jp-input-background, var(--jp-layout-color1));
+  color: var(--jp-ui-font-color1);
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: var(--jp-ui-font-size1);
+  outline: none;
+}
+
+.jp-ClaudeSessionsPanel-branchSearch:focus {
+  border-color: var(--jp-brand-color1);
 }
 
 .jp-ClaudeSessionsPanel-branchList {
@@ -325,10 +361,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 4px 6px;
+  gap: 6px;
+  height: 24px;
+  line-height: 24px;
+  padding: 0 8px;
   cursor: pointer;
   border-radius: 2px;
+  font-size: var(--jp-ui-font-size1);
 }
 
 .jp-ClaudeSessionsPanel-branchRow:hover {
@@ -343,6 +382,8 @@
 
 .jp-ClaudeSessionsPanel-branchTime {
   flex: none;
+  width: 52px;
+  text-align: right;
   color: var(--jp-ui-font-color2);
   font-size: var(--jp-ui-font-size0);
 }
@@ -394,7 +435,7 @@
 }
 
 .jp-ClaudeSessionsPanel-branchDelete {
-  padding: 4px 12px;
+  padding: 2px 8px;
   border: 1px solid var(--jp-border-color1);
   border-radius: 2px;
   background: var(--jp-layout-color1);
@@ -413,17 +454,22 @@
   color: var(--jp-error-color1);
 }
 
-/* Last-activity time on session rows - dim, right of the name. */
+/* Last-activity time on session rows - dim, fixed-width right-aligned
+   column so values line up across rows; the star column sits before it. */
 .jp-ClaudeSessionsPanel-rowTime {
   flex: 0 0 auto;
-  margin-left: 6px;
+  width: 52px;
+  text-align: right;
   color: var(--jp-ui-font-color2);
   font-size: var(--jp-ui-font-size0);
 }
 
 /* Age emphasis: a row active within the last minute reads bright, a row
-   idle for over a week dims; both decay/promote on the next refresh. */
-.jp-ClaudeSessionsPanel-row.jp-mod-recentlyActive .jp-ClaudeSessionsPanel-name {
+   idle for over a week dims; both decay/promote on the next refresh. The
+   "now" time label shares the active colour - same <60s threshold. */
+.jp-ClaudeSessionsPanel-row.jp-mod-recentlyActive .jp-ClaudeSessionsPanel-name,
+.jp-ClaudeSessionsPanel-row.jp-mod-recentlyActive
+  .jp-ClaudeSessionsPanel-rowTime {
   color: var(--jp-brand-color1);
 }
 

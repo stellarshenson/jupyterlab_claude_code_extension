@@ -153,8 +153,9 @@ def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
     crash can leave it referencing only an older sessionId while newer
     JSONLs sit on disk - so we scan ``*.jsonl`` ourselves rather than trust
     the index alone. Among the JSONLs we prefer the most recent one whose
-    recorded ``cwd`` is *consistent with how Claude named this directory*
-    (``_encode_path(cwd) == project_dir.name``). That matters after a folder
+    recorded ``cwd`` is *consistent with how Claude named this directory* -
+    the project path itself or a subdirectory of it (see
+    ``_project_path_for_cwd``). That matters after a folder
     rename: Claude re-homes the old session files under the new directory but
     their records still carry the old ``cwd``, so the newest file on disk can
     point at a path that no longer exists. Only when no JSONL is consistent do
@@ -173,8 +174,9 @@ def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
     chosen_cwd: str | None = None
     for jsonl in jsonls:
         cwd = _jsonl_cwd(jsonl)
-        if cwd and _encode_path(cwd) == dirname:
-            chosen, chosen_cwd = jsonl, cwd
+        project_path = _project_path_for_cwd(cwd, dirname) if cwd else None
+        if project_path:
+            chosen, chosen_cwd = jsonl, project_path
             break
     if chosen is None:
         # No JSONL records a cwd that encodes to this directory name. That
@@ -343,6 +345,26 @@ def _encode_path(path: str) -> str:
         else:
             out.append(ch)
     return "".join(out)
+
+
+def _project_path_for_cwd(cwd: str, dirname: str) -> str | None:
+    """Return the project path when ``cwd`` is the project dir or inside it.
+
+    ``_encode_path`` is char-by-char and length-preserving, so when the
+    encoded cwd extends ``dirname`` the first ``len(dirname)`` characters of
+    ``cwd`` ARE the project path - no lossy decode needed. The boundary
+    character must be a real ``/`` so a sibling like ``/x/foo-bar`` does not
+    match project ``/x/foo``. Subdirectory cwds are legitimate: claude
+    records cwd per message, so working in a subfolder moves the tail cwd
+    while the session still belongs to the project. Returns None when the
+    cwd is foreign to the project.
+    """
+    enc = _encode_path(cwd)
+    if enc == dirname:
+        return cwd
+    if enc.startswith(dirname) and len(cwd) > len(dirname) and cwd[len(dirname)] == "/":
+        return cwd[: len(dirname)]
+    return None
 
 
 def _encode_segment(name: str) -> str:
@@ -705,6 +727,50 @@ def switch_branch(claude_root: Path, encoded_path: str, session_id: str) -> dict
         "requested": session_id,
         "current": latest.get("sessionId") if latest else None,
     }
+
+
+def set_branch_title(
+    claude_root: Path,
+    encoded_path: str,
+    session_id: str,
+    title: str,
+) -> bool | None:
+    """Stamp a conversation with a custom title.
+
+    Appends a ``custom-title`` record to the session JSONL - the same record
+    claude's own ``/rename`` writes and the one ``_scan_jsonl_for_custom_title``
+    resolves (last record wins). Used to name a freshly forked branch once
+    claude has materialised its JSONL. Returns True on success, False when
+    the JSONL does not exist (yet) and None on invalid input.
+    """
+    if (
+        not isinstance(session_id, str)
+        or not session_id
+        or "/" in session_id
+        or session_id in (".", "..")
+    ):
+        return None
+    if not isinstance(title, str) or not title.strip():
+        return None
+    project_dir = _safe_project_dir(claude_root, encoded_path)
+    if project_dir is None:
+        return None
+    jsonl = project_dir / f"{session_id}.jsonl"
+    if not jsonl.is_file():
+        return False
+    record = {
+        "type": "custom-title",
+        "customTitle": title.strip(),
+        "sessionId": session_id,
+    }
+    # Preserve the file times: titling a conversation must not bump its
+    # mtime and silently make it the project's current one - recency
+    # switching stays the job of switch_branch / claude itself.
+    stat = jsonl.stat()
+    with jsonl.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record) + "\n")
+    os.utime(jsonl, (stat.st_atime, stat.st_mtime))
+    return True
 
 
 def delete_branches(

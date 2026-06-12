@@ -4,6 +4,24 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.9] - 2026-06-12
+
+### Added
+
+- "Branch Session..." and "Branch Session (Skip Permissions)..." context-menu items: ask for a name, then fork the row's current conversation via claude's native `--fork-session` with a frontend-generated `--session-id`, opened in a new terminal; the chosen name is stamped as a `custom-title` record once the JSONL appears (new `POST sessions/set-title`, mtime preserved so titling never switches the current conversation) and the fork becomes the row's current conversation by recency
+- Branch icon + total conversation count badge on rows with parallel conversations, replacing the plain `(N)` bracket text
+- Design language reference `design-language.md` in the jupyterlab-extension skill, distilled from the share-files extension (spacing, JL colour variables, typography, radii, component patterns, jp-mod state classes)
+
+### Changed
+
+- Panel rows lay out as aligned columns: favourite star in its own column before a fixed-width right-aligned time column; the `now` label shares the recently-active brand colour; the live green dot softened to 0.75 opacity
+- Branch popup restyled to the documented design language: 24px rows, 6px gaps, compact search input with brand focus border, aligned time column, compact delete button
+- README repositioned: lead and "Why this extension" section present the extension as a full Claude Code launcher and manager for JupyterLab running the unmodified CLI harness, not just a session manager
+
+### Fixed
+
+- Switching to a same-project conversation no longer fails with "recorded folder does not match the project" when the branch's tail cwd is a subdirectory of the project: `_resolve_latest` now accepts subdirectory cwds via `_project_path_for_cwd` (slicing the project root back out for the row path) while still rejecting sibling-prefix dirs and foreign paths
+
 ## [1.2.7] - 2026-06-12
 
 ### Added

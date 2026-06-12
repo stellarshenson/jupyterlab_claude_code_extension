@@ -138,10 +138,15 @@ describe('launch spinner dismiss contract', () => {
       /private async _switchBranch[\s\S]*?\n  \}/
     ) ?? [''])[0];
 
-    it('shows the conversation count only when the project has branches', () => {
-      expect(widgetSrc).toMatch(
-        /session\.extra_sessions > 0\s*\?\s*`\$\{this\._lookupName\(session\)\} \(\$\{session\.extra_sessions \+ 1\}\)`/
+    it('shows a branch icon + count badge only when the project has branches', () => {
+      const renderRow = (widgetSrc.match(
+        /private _renderRow[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(renderRow).toMatch(
+        /session\.extra_sessions > 0[\s\S]*?jp-ClaudeSessionsPanel-branchBadge/
       );
+      expect(renderRow).toMatch(/branchIcon\.element/);
+      expect(renderRow).toMatch(/String\(session\.extra_sessions \+ 1\)/);
     });
 
     it('rebuilds submenu items from a fresh branches fetch on open', () => {
@@ -292,6 +297,87 @@ describe('launch spinner dismiss contract', () => {
       expect(switchBranch).toMatch(
         /result\.current !== result\.requested[\s\S]*?Notification\.warning/
       );
+    });
+
+    it('renders the favourite star before the time column', () => {
+      const renderRow = (widgetSrc.match(
+        /private _renderRow[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      const starAt = renderRow.indexOf('jp-ClaudeSessionsPanel-favStar');
+      const timeAt = renderRow.indexOf('jp-ClaudeSessionsPanel-rowTime');
+      expect(starAt).toBeGreaterThan(-1);
+      expect(timeAt).toBeGreaterThan(-1);
+      expect(starAt).toBeLessThan(timeAt);
+    });
+
+    it('time labels form fixed-width right-aligned columns', () => {
+      const css: string = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'style', 'base.css'),
+        'utf-8'
+      );
+      const rowTime = (css.match(
+        /\.jp-ClaudeSessionsPanel-rowTime \{[\s\S]*?\}/
+      ) ?? [''])[0];
+      expect(rowTime).toMatch(/width: 52px/);
+      expect(rowTime).toMatch(/text-align: right/);
+      const branchTime = (css.match(
+        /\.jp-ClaudeSessionsPanel-branchTime \{[\s\S]*?\}/
+      ) ?? [''])[0];
+      expect(branchTime).toMatch(/width: 52px/);
+      expect(branchTime).toMatch(/text-align: right/);
+    });
+
+    it('now label shares the recently-active emphasis colour', () => {
+      const css: string = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'style', 'base.css'),
+        'utf-8'
+      );
+      expect(css).toMatch(
+        /jp-mod-recentlyActive[\s\S]{0,200}?jp-ClaudeSessionsPanel-rowTime[\s\S]{0,80}?--jp-brand-color1/
+      );
+    });
+
+    it('branch session commands exist in normal and skip-permissions modes', () => {
+      expect(widgetSrc).toMatch(/claude-code-sessions:branch-session'/);
+      expect(widgetSrc).toMatch(
+        /claude-code-sessions:branch-session-dangerous/
+      );
+      expect(widgetSrc).toMatch(
+        /Branch Session \(Skip Permissions\)\.\.\.[\s\S]{0,80}?icon: shieldIcon/
+      );
+    });
+
+    it('branch session asks for a name and launches a known fork id', () => {
+      const branch = (widgetSrc.match(
+        /private async _branchSession[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(branch).toMatch(/InputDialog\.getText/);
+      expect(branch).toMatch(/UUID\.uuid4\(\)/);
+      expect(branch).toMatch(/fork_session_id: forkId/);
+      expect(branch).toMatch(/session_id: session\.session_id/);
+      expect(branch).toMatch(/_stampForkTitle/);
+    });
+
+    it('fork title stamping retries on 404 until the JSONL appears', () => {
+      const stamp = (widgetSrc.match(
+        /private async _stampForkTitle[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(stamp).toMatch(/sessions\/set-title/);
+      expect(stamp).toMatch(/status === 404/);
+      expect(stamp).toMatch(/await this\._fetch\(\)/);
+      expect(stamp).toMatch(/Notification\.warning/);
+    });
+
+    it('live dot is softened with reduced opacity', () => {
+      const css: string = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'style', 'base.css'),
+        'utf-8'
+      );
+      const dot = (css.match(/\.jp-ClaudeSessionsPanel-dot \{[\s\S]*?\}/) ?? [
+        ''
+      ])[0];
+      expect(dot).toMatch(/--jp-success-color1/);
+      expect(dot).toMatch(/opacity: 0\.75/);
     });
   });
 

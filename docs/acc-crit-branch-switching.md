@@ -20,8 +20,9 @@ Context-menu submenu switches a project's current conversation to another branch
   - log: 2026-06-12 implemented (v1.2.2)
 - [x] **Switch** - selected JSONL becomes current; row session id / name / summary / recency update on refresh; click-to-resume opens it
   - log: 2026-06-12 implemented (v1.2.2)
-- [x] **Count** - row name shows `name (N)` total conversation count, only when N > 1; tooltip gets `Conversations: N` line
-  - log: 2026-06-12 implemented (v1.2.2)
+- [x] **Count** - row name shows the total conversation count, only when N > 1; tooltip gets `Conversations: N` line
+  - log: 2026-06-12 implemented as `name (N)` bracket text (v1.2.2)
+  - log: 2026-06-12 display changed to branch icon + count badge (see acc-crit-branch-session.md), pending release
 - [x] **Edge: branch removed before click** - switch returns 404 `branch_not_found`, panel shows error, refreshes; no row points at missing file
   - log: 2026-06-12 implemented (v1.2.2)
 - [x] **Edge: current JSONL removed externally** - next most recent becomes current on next refresh
@@ -30,6 +31,16 @@ Context-menu submenu switches a project's current conversation to another branch
   - log: 2026-06-12 implemented (v1.2.2)
 - [x] **Edge: cwd-inconsistent branch** - cannot become current (`_resolve_latest` skips it); response reports resolved session, panel warns
   - log: 2026-06-12 implemented (v1.2.2)
+  - log: 2026-06-12 semantics narrowed to genuinely foreign cwds - subdirectory cwds now consistent (see Subdir cwd)
+- [x] **Subdir cwd** - branch whose recorded cwd is a subdirectory of the project path is legitimate and can become current; the row's project path stays the project root, not the subdirectory
+  - log: 2026-06-12 criterion added after real-world failure (tail cwd in `experiments/grounding` subfolder blocked switch)
+  - log: 2026-06-12 implemented via `_project_path_for_cwd`, pending release
+- [x] **Edge: sibling-prefix dir** - cwd `/x/foo-bar` does not match project `/x/foo`; the character after the project path must be a real `/`
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Popup design language** - popup follows the documented JupyterLab design language (24px rows, 2px radii, compact brand-focus search input, fixed-width right-aligned time column, jp-mod state classes); reference: jupyterlab-extension skill design-language.md
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
 - [x] **Popup current row** - current conversation shown as the first popup row, marked `current`, non-selectable and non-deletable; only the extras below it are manageable
   - log: 2026-06-12 criterion added
   - log: 2026-06-12 implemented, pending release
