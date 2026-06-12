@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.19] - 2026-06-12
+
+### Changed
+
+- "Switch and Manage Sessions" submenu carries an arrow-switch icon (Octicons arrow-switch-16), matching the Branch Session submenu's icon treatment
+
 ## [1.2.17] - 2026-06-12
 
 ### Changed
