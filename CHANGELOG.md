@@ -4,6 +4,13 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.5] - 2026-06-12
+
+### Changed
+
+- Branch submenu and "More..." popup entries now show the conversation name plus the short session id in brackets, e.g. `home (3f2a1b9c)` - branches share the project path, so the name and id are what distinguish them; the suffix is skipped when the label already is the short-id fallback
+- Acceptance criteria document converted to checklist format: `[ ]` / `[o]` / `[x]` states with an append-only `log:` line per criterion recording when it was addressed
+
 ## [1.2.4] - 2026-06-12
 
 ### Added

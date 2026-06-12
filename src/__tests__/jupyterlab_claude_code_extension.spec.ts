@@ -157,6 +157,20 @@ describe('launch spinner dismiss contract', () => {
       );
     });
 
+    it('branch entries render name plus short id via _branchDisplayName', () => {
+      const display = (widgetSrc.match(
+        /private _branchDisplayName[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(display).toMatch(/session_id\.slice\(0, 8\)/);
+      expect(display).toMatch(/`\$\{b\.label\} \(\$\{shortId\}\)`/);
+      expect(widgetSrc).toMatch(
+        /label: `\$\{this\._branchDisplayName\(b\)\} - \$\{this\._formatRelativeTime\(b\.file_mtime\)\}`/
+      );
+      expect(widgetSrc).toMatch(
+        /label\.textContent = this\._branchDisplayName\(b\)/
+      );
+    });
+
     it('More... popup filters by label or session id and switches on click', () => {
       const popup = (widgetSrc.match(
         /private _showBranchPopup[\s\S]*?\n  \}/

@@ -1068,6 +1068,15 @@ export class ClaudeCodeSessionsWidget extends Widget {
     return `${Math.floor(diff / 86_400_000)}d ago`;
   }
 
+  /** Branch entry display: conversation name plus short session id in
+   * brackets; branches share the project path so only the name and id
+   * distinguish them. Skips the suffix when the label already is the
+   * short id (the backend's last-resort fallback). */
+  private _branchDisplayName(b: IBranch): string {
+    const shortId = b.session_id.slice(0, 8);
+    return b.label === shortId ? b.label : `${b.label} (${shortId})`;
+  }
+
   private _setRefreshSpinning(on: boolean): void {
     if (!this._refreshBtn) {
       return;
@@ -1320,7 +1329,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
             command: 'claude-code-sessions:switch-branch',
             args: {
               session_id: b.session_id,
-              label: `${b.label} - ${this._formatRelativeTime(b.file_mtime)}`
+              label: `${this._branchDisplayName(b)} - ${this._formatRelativeTime(b.file_mtime)}`
             }
           });
         }
@@ -1385,7 +1394,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
         const label = document.createElement('span');
         label.className = 'jp-ClaudeSessionsPanel-branchLabel';
-        label.textContent = b.label;
+        label.textContent = this._branchDisplayName(b);
         row.appendChild(label);
 
         const time = document.createElement('span');
