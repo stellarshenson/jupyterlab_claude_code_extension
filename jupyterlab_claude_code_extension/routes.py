@@ -313,6 +313,40 @@ class SessionSwitchHandler(APIHandler):
         self.finish(json.dumps(result))
 
 
+class SessionDeleteBranchesHandler(APIHandler):
+    """Delete selected branch sessions from a project folder.
+
+    Body: ``{"encoded_path": "-home-lab-foo", "session_ids": ["<uuid>", ...]}``.
+    The current main session is never deleted; missing JSONLs are treated as
+    already deleted. Honours JupyterLab's ``ContentsManager.delete_to_trash``
+    setting the same way ``SessionCleanupHandler`` does.
+    """
+
+    @tornado.web.authenticated
+    def post(self) -> None:
+        try:
+            body = json.loads(self.request.body or b"{}")
+        except json.JSONDecodeError:
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_json"}))
+            return
+        encoded_path = body.get("encoded_path")
+        session_ids = body.get("session_ids")
+        if not isinstance(encoded_path, str) or not isinstance(session_ids, list):
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_body"}))
+            return
+        to_trash = bool(getattr(self.contents_manager, "delete_to_trash", True))
+        removed = sessions_mod.delete_branches(
+            sessions_mod.claude_dir(), encoded_path, session_ids, to_trash=to_trash
+        )
+        if removed is None:
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_body"}))
+            return
+        self.finish(json.dumps({"removed_count": removed}))
+
+
 class TerminalCwdHandler(APIHandler):
     """Return the cwd of the deepest shell child of a JL terminal.
 
@@ -426,6 +460,10 @@ def setup_route_handlers(web_app) -> None:
         (url_path_join(base_url, URL_PREFIX, "sessions", "cleanup"), SessionCleanupHandler),
         (url_path_join(base_url, URL_PREFIX, "sessions", "branches"), SessionBranchesHandler),
         (url_path_join(base_url, URL_PREFIX, "sessions", "switch"), SessionSwitchHandler),
+        (
+            url_path_join(base_url, URL_PREFIX, "sessions", "delete-branches"),
+            SessionDeleteBranchesHandler,
+        ),
         (
             url_path_join(base_url, URL_PREFIX, "terminal-cwd", r"([^/]+)"),
             TerminalCwdHandler,

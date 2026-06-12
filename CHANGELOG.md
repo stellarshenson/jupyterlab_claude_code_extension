@@ -4,6 +4,19 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.7] - 2026-06-12
+
+### Added
+
+- Session deletion inside the switcher popup: checkbox per row (own click zone), select-all over the visible filtered rows, and a two-step `Delete (N)` -> `Confirm delete (N)` button; removed JSONLs and their subagent directories honour JupyterLab's move-to-trash setting, the popup refreshes in place and the panel row count drops
+- The popup leads with the current conversation - badged `current`, unselectable and undeletable; while any checkbox is ticked, row clicks toggle selection instead of switching (no accidental switch mid-selection)
+- Backend `POST sessions/delete-branches` endpoint; the current main session is never deleted and already-missing files are treated as deleted
+- Row age emphasis: rows active within the last minute show the name in the theme's brand colour, rows idle for over a week dim slightly; acceptance criteria in `docs/acc-crit-row-age-emphasis.md`
+
+### Changed
+
+- The branch submenu is now titled "Switch and Manage Sessions (N)" and its "Manage Sessions... (N)" popup entry is always present - previously the popup was reachable only beyond 5 branches, leaving projects with 2-5 conversations without access to the full list
+
 ## [1.2.5] - 2026-06-12
 
 ### Changed

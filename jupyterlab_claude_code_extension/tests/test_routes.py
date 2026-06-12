@@ -361,6 +361,67 @@ def test_removed_current_falls_back_to_next_most_recent(fake_claude: Path) -> No
     assert rows["/home/user/branchy"]["session_id"] == "sid-1"
 
 
+def test_delete_branches_removes_jsonl_and_subagent_dir(fake_claude: Path) -> None:
+    d = _make_branch_project(fake_claude, 4)
+    (d / "sid-1").mkdir()
+    (d / "sid-1" / "agent.jsonl").write_text("{}\n")
+    removed = sessions_mod.delete_branches(
+        fake_claude, "-home-user-branchy", ["sid-0", "sid-1"]
+    )
+    assert removed == 2
+    assert not (d / "sid-0.jsonl").exists()
+    assert not (d / "sid-1.jsonl").exists()
+    assert not (d / "sid-1").exists()
+    assert (d / "sid-2.jsonl").exists()
+    assert (d / "sid-3.jsonl").exists()
+
+
+def test_delete_branches_skips_missing_silently(fake_claude: Path) -> None:
+    """Edge: a branch removed between popup display and delete is treated
+    as already deleted - no error, count covers actual removals only."""
+    _make_branch_project(fake_claude, 3)
+    removed = sessions_mod.delete_branches(
+        fake_claude, "-home-user-branchy", ["sid-0", "gone"]
+    )
+    assert removed == 1
+
+
+def test_delete_branches_never_deletes_current_main(fake_claude: Path) -> None:
+    d = _make_branch_project(fake_claude, 3)
+    removed = sessions_mod.delete_branches(
+        fake_claude, "-home-user-branchy", ["sid-2", "sid-0"]
+    )
+    assert removed == 1
+    assert (d / "sid-2.jsonl").exists()
+    assert not (d / "sid-0.jsonl").exists()
+
+
+def test_delete_branches_rejects_invalid_input(fake_claude: Path) -> None:
+    _make_branch_project(fake_claude, 3)
+    assert sessions_mod.delete_branches(fake_claude, "../x", ["sid-0"]) is None
+    assert sessions_mod.delete_branches(
+        fake_claude, "-home-user-branchy", ["../../etc/passwd"]
+    ) is None
+    assert sessions_mod.delete_branches(fake_claude, "-home-user-branchy", []) is None
+    assert sessions_mod.delete_branches(
+        fake_claude, "-home-user-branchy", "sid-0"
+    ) is None
+
+
+def test_delete_all_extras_leaves_only_main(fake_claude: Path) -> None:
+    """Edge: select-all + delete - the project keeps its current
+    conversation and the row count drops to a single session."""
+    _make_branch_project(fake_claude, 4)
+    removed = sessions_mod.delete_branches(
+        fake_claude, "-home-user-branchy", ["sid-0", "sid-1", "sid-2"]
+    )
+    assert removed == 3
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    row = rows["/home/user/branchy"]
+    assert row["session_id"] == "sid-3"
+    assert row["extra_sessions"] == 0
+
+
 def test_session_state_picks_latest_updated_at(fake_claude: Path) -> None:
     """When multiple pid files share a cwd, the record with the highest
     ``updatedAt`` wins (used for live_pid / session_id resolution)."""
@@ -965,3 +1026,34 @@ async def test_switch_endpoint_switches_and_404s_on_missing(
             method="POST", body=body,
         )
     assert "404" in str(exc.value)
+
+
+async def test_delete_branches_endpoint(jp_fetch, patched_claude_dir) -> None:
+    d = _make_branch_project(patched_claude_dir, 4)
+    body = json.dumps({
+        "encoded_path": "-home-user-branchy",
+        "session_ids": ["sid-0", "sid-1"],
+    })
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "sessions", "delete-branches",
+        method="POST", body=body,
+    )
+    assert response.code == 200
+    assert json.loads(response.body) == {"removed_count": 2}
+    assert not (d / "sid-0.jsonl").exists()
+    assert (d / "sid-3.jsonl").exists()
+
+
+async def test_delete_branches_endpoint_rejects_bad_body(
+    jp_fetch, patched_claude_dir
+) -> None:
+    _make_branch_project(patched_claude_dir, 3)
+    body = json.dumps({
+        "encoded_path": "-home-user-branchy", "session_ids": "sid-0",
+    })
+    with pytest.raises(Exception) as exc:
+        await jp_fetch(
+            "jupyterlab-claude-code-extension", "sessions", "delete-branches",
+            method="POST", body=body,
+        )
+    assert "400" in str(exc.value)

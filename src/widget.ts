@@ -26,6 +26,7 @@ import {
 import {
   IBranch,
   IBranchesResponse,
+  IDeleteBranchesResponse,
   IFavouriteResponse,
   ILaunchTerminalResponse,
   ICleanupResponse,
@@ -928,6 +929,17 @@ export class ClaudeCodeSessionsWidget extends Widget {
     row.className = 'jp-ClaudeSessionsPanel-row';
     row.title = this._buildRowTooltip(session);
 
+    // Age emphasis: active within the last minute reads bright, idle for
+    // over a week dims; the state decays/promotes on the next refresh.
+    if (session.file_mtime) {
+      const age = Date.now() - session.file_mtime;
+      if (age < 60_000) {
+        row.classList.add('jp-mod-recentlyActive');
+      } else if (age > 7 * 86_400_000) {
+        row.classList.add('jp-mod-stale');
+      }
+    }
+
     const removing = this._removingPaths.has(session.encoded_path);
     if (removing) {
       row.classList.add('jp-mod-busy');
@@ -1214,9 +1226,12 @@ export class ClaudeCodeSessionsWidget extends Widget {
     });
 
     this._commands.addCommand('claude-code-sessions:switch-branch-more', {
-      label: () => `More... (${this._lastBranches.length} total)`,
+      label: () => `Manage Sessions... (${this._lastBranches.length})`,
       execute: () => {
-        void this._showBranchPopup(this._lastBranches);
+        void this._showBranchPopup(
+          this._lastBranches,
+          this._lastBranchesCurrent
+        );
       }
     });
 
@@ -1257,7 +1272,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
     // sessions/branches fetch.
     this._branchSubmenu = new Menu({ commands: this._commands });
     this._branchSubmenu.addClass('jp-ClaudeSessionsContextMenu');
-    this._branchSubmenu.title.label = 'Switch Conversation Branch';
+    this._branchSubmenu.title.label = 'Switch and Manage Sessions';
 
     this._contextMenu = new Menu({ commands: this._commands });
     this._contextMenu.addClass('jp-ClaudeSessionsContextMenu');
@@ -1321,9 +1336,12 @@ export class ClaudeCodeSessionsWidget extends Widget {
           { cache: 'no-store' }
         );
         this._lastBranches = data.branches;
+        this._lastBranchesCurrent = data.current;
         this._branchSubmenu.clearItems();
-        // The submenu shows only the 5 most recent; the full list lives
-        // behind "More..." in a searchable popup.
+        this._branchSubmenu.title.label = `Switch and Manage Sessions (${data.branches.length})`;
+        // The submenu shows only the 5 most recent inline (fewest clicks
+        // for often-used sessions); the full list plus management lives
+        // behind the always-present "Manage Sessions..." popup.
         for (const b of data.branches.slice(0, 5)) {
           this._branchSubmenu.addItem({
             command: 'claude-code-sessions:switch-branch',
@@ -1333,12 +1351,10 @@ export class ClaudeCodeSessionsWidget extends Widget {
             }
           });
         }
-        if (data.branches.length > 5) {
-          this._branchSubmenu.addItem({ type: 'separator' });
-          this._branchSubmenu.addItem({
-            command: 'claude-code-sessions:switch-branch-more'
-          });
-        }
+        this._branchSubmenu.addItem({ type: 'separator' });
+        this._branchSubmenu.addItem({
+          command: 'claude-code-sessions:switch-branch-more'
+        });
         hasBranches = data.branches.length > 0;
       } catch {
         hasBranches = false;
@@ -1348,42 +1364,106 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._contextMenu.open(x, y);
   }
 
-  /** Popup with the project's full branch list - browse and filter when
-   * the list is too large for the submenu. Clicking an entry switches. */
-  private _showBranchPopup(branches: IBranch[]): void {
+  /** Popup with the project's full branch list - browse, filter, switch
+   * and manage. Clicking an entry switches while nothing is selected;
+   * checkbox selection (one, many, or select-all) arms a two-step Delete
+   * button that removes the chosen sessions. The current conversation is
+   * shown first, badged and untouchable. */
+  private _showBranchPopup(branches: IBranch[], current: string): void {
+    // Local working copy so deletions can refresh the list in place.
+    let items = [...branches];
+    const selected = new Set<string>();
+    let confirmArmed = false;
+
     const body = document.createElement('div');
     body.className = 'jp-ClaudeSessionsPanel-branchPopup';
 
     const search = document.createElement('input');
     search.type = 'search';
-    search.placeholder = 'Filter branches...';
+    search.placeholder = 'Filter sessions...';
     search.className = 'jp-ClaudeSessionsPanel-branchSearch';
     body.appendChild(search);
+
+    const selectAllBar = document.createElement('label');
+    selectAllBar.className = 'jp-ClaudeSessionsPanel-branchSelectAll';
+    const selectAll = document.createElement('input');
+    selectAll.type = 'checkbox';
+    selectAllBar.appendChild(selectAll);
+    selectAllBar.appendChild(document.createTextNode('Select all'));
+    body.appendChild(selectAllBar);
 
     const list = document.createElement('div');
     list.className = 'jp-ClaudeSessionsPanel-branchList';
     body.appendChild(list);
 
+    const footer = document.createElement('div');
+    footer.className = 'jp-ClaudeSessionsPanel-branchFooter';
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'jp-ClaudeSessionsPanel-branchDelete';
+    footer.appendChild(deleteBtn);
+    body.appendChild(footer);
+
     const bodyWidget = new Widget({ node: body });
     const dialog = new Dialog({
-      title: 'Switch Conversation Branch',
+      title: 'Switch and Manage Sessions',
       body: bodyWidget,
       buttons: [Dialog.cancelButton()]
     });
 
-    const render = () => {
+    const visibleMatches = (): IBranch[] => {
       const needle = search.value.trim().toLowerCase();
-      list.replaceChildren();
-      const matches = branches.filter(
+      return items.filter(
         b =>
           !needle ||
           b.label.toLowerCase().includes(needle) ||
           b.session_id.toLowerCase().includes(needle)
       );
+    };
+
+    // Any selection change disarms a pending confirm.
+    const updateControls = () => {
+      confirmArmed = false;
+      deleteBtn.disabled = selected.size === 0;
+      deleteBtn.textContent = `Delete (${selected.size})`;
+      deleteBtn.classList.remove('jp-mod-confirm');
+      const visible = visibleMatches();
+      const visibleSelected = visible.filter(b =>
+        selected.has(b.session_id)
+      ).length;
+      selectAll.checked =
+        visible.length > 0 && visibleSelected === visible.length;
+      selectAll.indeterminate =
+        visibleSelected > 0 && visibleSelected < visible.length;
+    };
+
+    const render = () => {
+      list.replaceChildren();
+
+      // The current conversation leads the list - badged, unselectable,
+      // undeletable; only the extras below it are manageable.
+      const currentRow = document.createElement('div');
+      currentRow.className = 'jp-ClaudeSessionsPanel-branchRow jp-mod-current';
+      currentRow.title = `Session id: ${current}`;
+      const currentLabel = document.createElement('span');
+      currentLabel.className = 'jp-ClaudeSessionsPanel-branchLabel';
+      const currentName = this._activeSession
+        ? this._lookupName(this._activeSession)
+        : current.slice(0, 8);
+      currentLabel.textContent = `${currentName} (${current.slice(0, 8)})`;
+      currentRow.appendChild(currentLabel);
+      const badge = document.createElement('span');
+      badge.className = 'jp-ClaudeSessionsPanel-branchCurrentBadge';
+      badge.textContent = 'current';
+      currentRow.appendChild(badge);
+      list.appendChild(currentRow);
+
+      const matches = visibleMatches();
       if (matches.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'jp-ClaudeSessionsPanel-emptySection';
-        empty.textContent = 'No matching branches.';
+        empty.textContent = items.length
+          ? 'No matching sessions.'
+          : 'No other conversations.';
         list.appendChild(empty);
         return;
       }
@@ -1391,6 +1471,21 @@ export class ClaudeCodeSessionsWidget extends Widget {
         const row = document.createElement('div');
         row.className = 'jp-ClaudeSessionsPanel-branchRow';
         row.title = `Session id: ${b.session_id}`;
+
+        const check = document.createElement('input');
+        check.type = 'checkbox';
+        check.checked = selected.has(b.session_id);
+        // The checkbox is its own click zone - ticking must not switch.
+        check.addEventListener('click', e => {
+          e.stopPropagation();
+          if (check.checked) {
+            selected.add(b.session_id);
+          } else {
+            selected.delete(b.session_id);
+          }
+          updateControls();
+        });
+        row.appendChild(check);
 
         const label = document.createElement('span');
         label.className = 'jp-ClaudeSessionsPanel-branchLabel';
@@ -1403,17 +1498,100 @@ export class ClaudeCodeSessionsWidget extends Widget {
         row.appendChild(time);
 
         row.addEventListener('click', () => {
+          // Selection mode: while anything is ticked, row clicks toggle
+          // selection - no accidental switch mid-selection.
+          if (selected.size > 0) {
+            if (selected.has(b.session_id)) {
+              selected.delete(b.session_id);
+            } else {
+              selected.add(b.session_id);
+            }
+            check.checked = selected.has(b.session_id);
+            updateControls();
+            return;
+          }
           dialog.dispose();
           void this._switchBranch(b.session_id);
         });
         list.appendChild(row);
       }
     };
-    search.addEventListener('input', render);
+
+    selectAll.addEventListener('change', () => {
+      // Select-all acts on the visible (filtered) rows only.
+      const visible = visibleMatches();
+      if (selectAll.checked) {
+        visible.forEach(b => selected.add(b.session_id));
+      } else {
+        visible.forEach(b => selected.delete(b.session_id));
+      }
+      render();
+      updateControls();
+    });
+
+    deleteBtn.addEventListener('click', () => {
+      if (selected.size === 0) {
+        return;
+      }
+      if (!confirmArmed) {
+        // Two-step delete: first click arms, second click executes.
+        confirmArmed = true;
+        deleteBtn.textContent = `Confirm delete (${selected.size})`;
+        deleteBtn.classList.add('jp-mod-confirm');
+        return;
+      }
+      void this._deleteBranches([...selected]).then(deleted => {
+        if (deleted === null) {
+          return;
+        }
+        items = items.filter(b => !selected.has(b.session_id));
+        selected.clear();
+        this._lastBranches = items;
+        render();
+        updateControls();
+      });
+    });
+
+    search.addEventListener('input', () => {
+      render();
+      updateControls();
+    });
     render();
+    updateControls();
 
     void dialog.launch();
     search.focus();
+  }
+
+  /** Delete the given branch sessions of the active row's project.
+   * Returns the removed count, or null on failure (after notifying).
+   * Always resyncs the panel so the row's conversation count drops. */
+  private async _deleteBranches(sessionIds: string[]): Promise<number | null> {
+    const session = this._activeSession;
+    if (!session) {
+      return null;
+    }
+    try {
+      const result = await requestAPI<IDeleteBranchesResponse>(
+        'sessions/delete-branches',
+        this._serverSettings,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            encoded_path: session.encoded_path,
+            session_ids: sessionIds
+          })
+        }
+      );
+      return result.removed_count;
+    } catch (err) {
+      Notification.error(`Delete failed: ${String(err)}`, {
+        autoClose: 4000
+      });
+      return null;
+    } finally {
+      await this._fetch();
+    }
   }
 
   /** Switch the active row's project to another conversation branch.
@@ -1493,6 +1671,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private _contextMenu!: Menu;
   private _branchSubmenu!: Menu;
   private _lastBranches: IBranch[] = [];
+  private _lastBranchesCurrent = '';
   private _newSessionMenu!: Menu;
   private _activeSession: ISession | null = null;
   private _activeRowEl: HTMLElement | null = null;

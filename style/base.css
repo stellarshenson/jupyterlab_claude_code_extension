@@ -347,10 +347,86 @@
   font-size: var(--jp-ui-font-size0);
 }
 
+.jp-ClaudeSessionsPanel-branchRow input[type='checkbox'] {
+  flex: none;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* The current conversation leads the popup list - badged, untouchable. */
+.jp-ClaudeSessionsPanel-branchRow.jp-mod-current {
+  cursor: default;
+  color: var(--jp-ui-font-color2);
+}
+
+.jp-ClaudeSessionsPanel-branchRow.jp-mod-current:hover {
+  background: transparent;
+}
+
+.jp-ClaudeSessionsPanel-branchCurrentBadge {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 8px;
+  color: var(--jp-ui-font-color2);
+  font-size: var(--jp-ui-font-size0);
+}
+
+.jp-ClaudeSessionsPanel-branchSelectAll {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  cursor: pointer;
+  color: var(--jp-ui-font-color2);
+  font-size: var(--jp-ui-font-size0);
+  user-select: none;
+}
+
+.jp-ClaudeSessionsPanel-branchSelectAll input[type='checkbox'] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.jp-ClaudeSessionsPanel-branchFooter {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.jp-ClaudeSessionsPanel-branchDelete {
+  padding: 4px 12px;
+  border: 1px solid var(--jp-border-color1);
+  border-radius: 2px;
+  background: var(--jp-layout-color1);
+  color: var(--jp-ui-font-color1);
+  cursor: pointer;
+}
+
+.jp-ClaudeSessionsPanel-branchDelete:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Armed state of the two-step delete - second click executes. */
+.jp-ClaudeSessionsPanel-branchDelete.jp-mod-confirm {
+  border-color: var(--jp-error-color1);
+  color: var(--jp-error-color1);
+}
+
 /* Last-activity time on session rows - dim, right of the name. */
 .jp-ClaudeSessionsPanel-rowTime {
   flex: 0 0 auto;
   margin-left: 6px;
   color: var(--jp-ui-font-color2);
   font-size: var(--jp-ui-font-size0);
+}
+
+/* Age emphasis: a row active within the last minute reads bright, a row
+   idle for over a week dims; both decay/promote on the next refresh. */
+.jp-ClaudeSessionsPanel-row.jp-mod-recentlyActive .jp-ClaudeSessionsPanel-name {
+  color: var(--jp-brand-color1);
+}
+
+.jp-ClaudeSessionsPanel-row.jp-mod-stale {
+  opacity: 0.65;
 }

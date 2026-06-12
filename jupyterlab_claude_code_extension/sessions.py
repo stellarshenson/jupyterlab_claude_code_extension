@@ -707,6 +707,53 @@ def switch_branch(claude_root: Path, encoded_path: str, session_id: str) -> dict
     }
 
 
+def delete_branches(
+    claude_root: Path,
+    encoded_path: str,
+    session_ids: list,
+    to_trash: bool = False,
+) -> int | None:
+    """Delete selected branch sessions from a project folder.
+
+    For every requested ``<sessionId>.jsonl`` the file and its sibling
+    ``<sessionId>/`` subagent directory (when present) are removed - to the
+    desktop trash when ``to_trash`` is true. The current main session
+    (``_resolve_latest``) is never deleted even when requested; a missing
+    JSONL is treated as already deleted (skipped silently). Returns the
+    number of sessions actually removed, or None on invalid input.
+    """
+    if not isinstance(session_ids, list) or not session_ids:
+        return None
+    for sid in session_ids:
+        if (
+            not isinstance(sid, str)
+            or not sid
+            or "/" in sid
+            or sid in (".", "..")
+        ):
+            return None
+    project_dir = _safe_project_dir(claude_root, encoded_path)
+    if project_dir is None:
+        return None
+    index_path = project_dir / INDEX_FILENAME
+    index = _load_json(index_path) if index_path.is_file() else None
+    latest = _resolve_latest(project_dir, index)
+    keep = latest.get("sessionId") if latest else None
+    removed = 0
+    for sid in session_ids:
+        if sid == keep:
+            continue
+        jsonl = project_dir / f"{sid}.jsonl"
+        if not jsonl.is_file():
+            continue
+        _dispose_path(jsonl, to_trash)
+        side_dir = project_dir / sid
+        if side_dir.is_dir():
+            _dispose_path(side_dir, to_trash)
+        removed += 1
+    return removed
+
+
 def cleanup_parallel_sessions(
     claude_root: Path, encoded_path: str, to_trash: bool = False
 ) -> int | None:

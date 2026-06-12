@@ -73,6 +73,15 @@ export interface ISwitchResponse {
   current: string | null;
 }
 
+export interface IDeleteBranchesRequest {
+  encoded_path: string;
+  session_ids: string[];
+}
+
+export interface IDeleteBranchesResponse {
+  removed_count: number;
+}
+
 export interface ILaunchTerminalRequest {
   project_path: string;
   /** Omit to start a brand-new claude session instead of resuming one. */

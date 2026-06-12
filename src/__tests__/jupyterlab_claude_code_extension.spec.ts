@@ -150,10 +150,21 @@ describe('launch spinner dismiss contract', () => {
       expect(openMenu).toMatch(/_rebuildContextMenu\(hasBranches\)/);
     });
 
-    it('caps the submenu at 5 and adds More... beyond that', () => {
+    it('caps the inline submenu at 5 most recent', () => {
       expect(openMenu).toMatch(/\.slice\(0, 5\)/);
+    });
+
+    it('always adds the Manage Sessions entry, no >5 gate', () => {
+      // The popup is the management hub - it must be reachable even for
+      // projects with 2-5 conversations, so the entry is unconditional.
+      expect(openMenu).toMatch(/switch-branch-more/);
+      expect(openMenu).not.toMatch(/branches\.length > 5/);
+      expect(widgetSrc).toMatch(/`Manage Sessions\.\.\. \(\$\{/);
+    });
+
+    it('titles the submenu Switch and Manage Sessions with the count', () => {
       expect(openMenu).toMatch(
-        /branches\.length > 5[\s\S]*?switch-branch-more/
+        /title\.label = `Switch and Manage Sessions \(\$\{data\.branches\.length\}\)`/
       );
     });
 
@@ -181,6 +192,70 @@ describe('launch spinner dismiss contract', () => {
       expect(popup).toMatch(
         /dialog\.dispose\(\);\s*void this\._switchBranch\(b\.session_id\)/
       );
+    });
+
+    it('popup leads with the current row, badged and without checkbox', () => {
+      const popup = (widgetSrc.match(
+        /private _showBranchPopup[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(popup).toMatch(/jp-mod-current/);
+      expect(popup).toMatch(/branchCurrentBadge/);
+      // The current row is appended before any checkbox is created.
+      const currentIdx = popup.indexOf('jp-mod-current');
+      const checkboxIdx = popup.indexOf("check.type = 'checkbox'");
+      expect(currentIdx).toBeGreaterThan(-1);
+      expect(checkboxIdx).toBeGreaterThan(currentIdx);
+    });
+
+    it('checkbox is its own click zone and selection gates row switch', () => {
+      const popup = (widgetSrc.match(
+        /private _showBranchPopup[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(popup).toMatch(/stopPropagation\(\)/);
+      // Selection mode: row click toggles while anything is selected.
+      expect(popup).toMatch(
+        /if \(selected\.size > 0\) \{[\s\S]*?return;[\s\S]*?dialog\.dispose\(\)/
+      );
+    });
+
+    it('select-all toggles the visible (filtered) rows only', () => {
+      const popup = (widgetSrc.match(
+        /private _showBranchPopup[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(popup).toMatch(
+        /selectAll\.addEventListener\('change'[\s\S]*?visibleMatches\(\)/
+      );
+    });
+
+    it('delete is two-step and any selection change disarms it', () => {
+      const popup = (widgetSrc.match(
+        /private _showBranchPopup[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(popup).toMatch(/`Confirm delete \(\$\{selected\.size\}\)`/);
+      // updateControls (run on every selection change) resets the armed
+      // state and the button label.
+      expect(popup).toMatch(
+        /const updateControls = \(\) => \{\s*confirmArmed = false/
+      );
+    });
+
+    it('delete posts to delete-branches and resyncs the panel', () => {
+      const del = (widgetSrc.match(
+        /private async _deleteBranches[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(del).toMatch(/sessions\/delete-branches/);
+      expect(del).toMatch(/finally[\s\S]*?await this\._fetch\(\)/);
+    });
+
+    it('rows carry age emphasis classes at the 60s and 7d thresholds', () => {
+      expect(widgetSrc).toMatch(/age < 60_000[\s\S]*?jp-mod-recentlyActive/);
+      expect(widgetSrc).toMatch(/age > 7 \* 86_400_000[\s\S]*?jp-mod-stale/);
+      const css: string = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'style', 'base.css'),
+        'utf-8'
+      );
+      expect(css).toMatch(/jp-mod-recentlyActive[\s\S]*?--jp-brand-color1/);
+      expect(css).toMatch(/jp-mod-stale \{\s*opacity/);
     });
 
     it('opens the menu without the submenu when the fetch fails', () => {
