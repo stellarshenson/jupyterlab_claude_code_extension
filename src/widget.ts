@@ -443,6 +443,20 @@ export class ClaudeCodeSessionsWidget extends Widget {
   }
 
   private async _cleanupParallel(session: ISession): Promise<void> {
+    const extra = session.extra_sessions;
+    const name = this._lookupName(session);
+    const confirm = await showDialog({
+      title: 'Clean Up Parallel Sessions',
+      body:
+        `Remove ${extra} parallel session${extra === 1 ? '' : 's'} from ` +
+        `"${name}"? The main conversation is kept; the rest are moved to ` +
+        'trash. This cannot be undone.',
+      buttons: [Dialog.cancelButton(), Dialog.warnButton({ label: 'Remove' })]
+    });
+    if (!confirm.button.accept) {
+      return;
+    }
+
     const body = new Widget();
     body.node.className = 'jp-ClaudeSessionsPanel-cleanupBody';
 
@@ -1432,7 +1446,6 @@ export class ClaudeCodeSessionsWidget extends Widget {
     // Local working copy so deletions can refresh the list in place.
     let items = [...branches];
     const selected = new Set<string>();
-    let confirmArmed = false;
 
     const body = document.createElement('div');
     body.className = 'jp-ClaudeSessionsPanel-branchPopup';
@@ -1479,12 +1492,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
       );
     };
 
-    // Any selection change disarms a pending confirm.
     const updateControls = () => {
-      confirmArmed = false;
       deleteBtn.disabled = selected.size === 0;
       deleteBtn.textContent = `Delete (${selected.size})`;
-      deleteBtn.classList.remove('jp-mod-confirm');
       const visible = visibleMatches();
       const visibleSelected = visible.filter(b =>
         selected.has(b.session_id)
@@ -1592,22 +1602,27 @@ export class ClaudeCodeSessionsWidget extends Widget {
       if (selected.size === 0) {
         return;
       }
-      if (!confirmArmed) {
-        // Two-step delete: first click arms, second click executes.
-        confirmArmed = true;
-        deleteBtn.textContent = `Confirm delete (${selected.size})`;
-        deleteBtn.classList.add('jp-mod-confirm');
-        return;
-      }
-      void this._deleteBranches([...selected]).then(deleted => {
-        if (deleted === null) {
+      const n = selected.size;
+      void showDialog({
+        title: 'Delete Sessions',
+        body:
+          `Delete ${n} session${n === 1 ? '' : 's'} from "${this._activeSession ? this._lookupName(this._activeSession) : ''}"? ` +
+          'They are moved to trash. This cannot be undone.',
+        buttons: [Dialog.cancelButton(), Dialog.warnButton({ label: 'Delete' })]
+      }).then(confirm => {
+        if (!confirm.button.accept) {
           return;
         }
-        items = items.filter(b => !selected.has(b.session_id));
-        selected.clear();
-        this._lastBranches = items;
-        render();
-        updateControls();
+        void this._deleteBranches([...selected]).then(deleted => {
+          if (deleted === null) {
+            return;
+          }
+          items = items.filter(b => !selected.has(b.session_id));
+          selected.clear();
+          this._lastBranches = items;
+          render();
+          updateControls();
+        });
       });
     });
 

@@ -96,6 +96,14 @@ describe('launch spinner dismiss contract', () => {
       /private async _cleanupParallel[\s\S]*?\n  \}/
     ) ?? [''])[0];
 
+    it('confirms before removing and aborts when not accepted', () => {
+      expect(cleanup).toMatch(
+        /showDialog\(\{\s*title: 'Clean Up Parallel Sessions'/
+      );
+      expect(cleanup).toMatch(/Dialog\.warnButton\(\{ label: 'Remove' \}\)/);
+      expect(cleanup).toMatch(/if \(!confirm\.button\.accept\) \{\s*return;/);
+    });
+
     it('creates a progress element in the dialog body', () => {
       expect(cleanup).toMatch(/createElement\('progress'\)/);
     });
@@ -232,15 +240,14 @@ describe('launch spinner dismiss contract', () => {
       );
     });
 
-    it('delete is two-step and any selection change disarms it', () => {
+    it('delete opens a confirmation dialog and only deletes on accept', () => {
       const popup = (widgetSrc.match(
         /private _showBranchPopup[\s\S]*?\n  \}/
       ) ?? [''])[0];
-      expect(popup).toMatch(/`Confirm delete \(\$\{selected\.size\}\)`/);
-      // updateControls (run on every selection change) resets the armed
-      // state and the button label.
+      expect(popup).toMatch(/showDialog\(\{\s*title: 'Delete Sessions'/);
+      expect(popup).toMatch(/Dialog\.warnButton\(\{ label: 'Delete' \}\)/);
       expect(popup).toMatch(
-        /const updateControls = \(\) => \{\s*confirmArmed = false/
+        /if \(!confirm\.button\.accept\) \{\s*return;[\s\S]*?_deleteBranches/
       );
     });
 

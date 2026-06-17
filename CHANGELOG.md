@@ -4,6 +4,13 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.21] - 2026-06-17
+
+### Changed
+
+- "Clean Up Parallel Sessions" now asks for confirmation before removing: a dialog names the project and the count of parallel sessions to remove, with Cancel and a red Remove button; cleanup runs only on confirm
+- Deleting individual sessions in the "Manage Sessions" popup now uses a confirmation dialog (naming the project and the count, Cancel and a red Delete button) instead of the inline two-step Delete button
+
 ## [1.2.20] - 2026-06-17
 
 ### Changed
