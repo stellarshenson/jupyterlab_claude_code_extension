@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.20] - 2026-06-17
+
+### Changed
+
+- "Remove from Claude" now asks for confirmation before deleting: a dialog naming the project warns that the entire Claude project and all its conversations will be removed irreversibly, with Cancel and a red Remove button; removal proceeds only on confirm
+
 ## [1.2.19] - 2026-06-12
 
 ### Changed

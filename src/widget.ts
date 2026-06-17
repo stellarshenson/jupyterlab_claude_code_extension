@@ -407,6 +407,18 @@ export class ClaudeCodeSessionsWidget extends Widget {
   }
 
   private async _remove(session: ISession): Promise<void> {
+    const name = this._lookupName(session);
+    const confirm = await showDialog({
+      title: 'Remove from Claude',
+      body:
+        `Remove "${name}" from Claude? This deletes the entire Claude ` +
+        'project and every conversation it holds. This cannot be undone.',
+      buttons: [Dialog.cancelButton(), Dialog.warnButton({ label: 'Remove' })]
+    });
+    if (!confirm.button.accept) {
+      return;
+    }
+
     this._removingPaths.add(session.encoded_path);
     this._render();
     try {
