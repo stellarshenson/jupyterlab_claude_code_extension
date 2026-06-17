@@ -1050,6 +1050,37 @@ async def test_launch_terminal_fork_requires_session_id(
     assert "400" in str(exc.value)
 
 
+async def test_launch_terminal_forces_name_via_dash_n(
+    jp_fetch, fake_terminal_manager, tmp_path
+) -> None:
+    body = json.dumps({
+        "project_path": str(tmp_path),
+        "session_id": "sid-1",
+        "fork_session_id": "fork-9",
+        "name": "  my fork  ",
+    })
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "launch-terminal",
+        method="POST", body=body,
+    )
+    assert response.code == 200
+    cmd = fake_terminal_manager.kwargs["shell_command"]
+    # claude owns the name via ``-n <stripped name>``, appended last.
+    assert cmd[-2:] == ["-n", "my fork"]
+
+
+async def test_launch_terminal_rejects_blank_name(
+    jp_fetch, fake_terminal_manager, tmp_path
+) -> None:
+    body = json.dumps({"project_path": str(tmp_path), "name": "   "})
+    with pytest.raises(Exception) as exc:
+        await jp_fetch(
+            "jupyterlab-claude-code-extension", "launch-terminal",
+            method="POST", body=body,
+        )
+    assert "400" in str(exc.value)
+
+
 def test_set_branch_title_appends_custom_title(fake_claude: Path) -> None:
     _make_branch_project(fake_claude, 3)
     ok = sessions_mod.set_branch_title(

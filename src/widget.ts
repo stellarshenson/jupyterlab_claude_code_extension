@@ -1671,12 +1671,14 @@ export class ClaudeCodeSessionsWidget extends Widget {
   /** Fork the active row's current conversation into a new named branch.
    *
    * Asks for a name, then launches a terminal running
-   * ``claude --resume <current> --fork-session --session-id <new uuid>`` -
-   * the uuid is generated here so the forked JSONL is known up front. Once
-   * claude materialises the file (polled via sessions/set-title) the chosen
-   * name is stamped as a custom-title record. The fork is the newest JSONL,
-   * so the recency resolution makes it the row's current conversation
-   * without an explicit switch.
+   * ``claude --resume <current> --fork-session --session-id <new uuid> -n <name>`` -
+   * the uuid is generated here so the forked JSONL is known up front, and
+   * ``-n`` makes claude own the name: it writes the chosen name as a
+   * custom-title record on its first turn and re-stamps it every turn, so
+   * it sticks even though the fork inherits the parent's title. The fork is
+   * the newest JSONL, so recency resolution makes it the row's current
+   * conversation without an explicit switch. ``_stampForkTitle`` still runs
+   * to seed the title and refresh the row promptly while claude starts.
    */
   private async _branchSession(forceDangerous: boolean): Promise<void> {
     const session = this._activeSession;
@@ -1704,6 +1706,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
             project_path: session.project_path,
             session_id: session.session_id,
             fork_session_id: forkId,
+            name: title,
             dangerously_skip_permissions:
               forceDangerous || this._dangerouslySkip
           })

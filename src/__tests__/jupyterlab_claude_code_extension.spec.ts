@@ -378,6 +378,8 @@ describe('launch spinner dismiss contract', () => {
       expect(branch).toMatch(/UUID\.uuid4\(\)/);
       expect(branch).toMatch(/fork_session_id: forkId/);
       expect(branch).toMatch(/session_id: session\.session_id/);
+      // The name is forced at launch (claude -n <name>) so it sticks.
+      expect(branch).toMatch(/name: title/);
       expect(branch).toMatch(/_stampForkTitle/);
     });
 

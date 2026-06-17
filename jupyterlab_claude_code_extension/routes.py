@@ -449,6 +449,7 @@ class LaunchClaudeTerminalHandler(APIHandler):
         project_path = body.get("project_path")
         session_id = body.get("session_id")
         fork_session_id = body.get("fork_session_id")
+        name = body.get("name")
         dangerously_skip = bool(body.get("dangerously_skip_permissions"))
         if not isinstance(project_path, str) or not os.path.isdir(project_path):
             self.set_status(400)
@@ -465,8 +466,8 @@ class LaunchClaudeTerminalHandler(APIHandler):
         # ``fork_session_id`` branches the resumed conversation into a new
         # session id chosen by the caller (claude --fork-session
         # --session-id <uuid>) - so the frontend knows the forked id up
-        # front and can stamp its name once the JSONL appears. Only valid
-        # together with ``session_id``.
+        # front. The fork's display name is forced via ``-n <name>`` (see
+        # ``name`` below). Only valid together with ``session_id``.
         if fork_session_id is not None and (
             not isinstance(fork_session_id, str)
             or not fork_session_id
@@ -475,6 +476,15 @@ class LaunchClaudeTerminalHandler(APIHandler):
         ):
             self.set_status(400)
             self.finish(json.dumps({"error": "invalid_fork_session_id"}))
+            return
+        # ``name`` is optional: when present claude is launched with
+        # ``-n <name>``, so claude itself owns the session's display name and
+        # re-stamps it as a ``custom-title`` record on every turn - the name
+        # sticks even on a fork, where appending the title after the fact
+        # loses to the parent title the fork inherits.
+        if name is not None and (not isinstance(name, str) or not name.strip()):
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_name"}))
             return
         claude = sessions_mod.claude_binary_available()
         if not claude:
@@ -491,6 +501,8 @@ class LaunchClaudeTerminalHandler(APIHandler):
             argv += ["--fork-session", "--session-id", fork_session_id]
         if dangerously_skip:
             argv.append("--dangerously-skip-permissions")
+        if isinstance(name, str) and name.strip():
+            argv += ["-n", name.strip()]
         model = terminal_manager.create(
             shell_command=_wrap_with_init(argv),
             cwd=project_path,

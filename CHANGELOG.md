@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.22] - 2026-06-17
+
+### Fixed
+
+- Branch Session now keeps the name you give it: the fork launches with `claude -n <name>` so claude owns the display name and re-stamps it every turn, instead of the name reverting to the parent conversation's title
+
 ## [1.2.21] - 2026-06-17
 
 ### Changed
