@@ -9,7 +9,7 @@ import {
 import { ServerConnection } from '@jupyterlab/services';
 import { IDefaultFileBrowser } from '@jupyterlab/filebrowser';
 import { ITerminalTracker } from '@jupyterlab/terminal';
-import { folderIcon, terminalIcon } from '@jupyterlab/ui-components';
+import { copyIcon, folderIcon, terminalIcon } from '@jupyterlab/ui-components';
 import { CommandRegistry } from '@lumino/commands';
 import { UUID } from '@lumino/coreutils';
 import { Menu, Widget } from '@lumino/widgets';
@@ -131,18 +131,21 @@ export class ClaudeCodeSessionsWidget extends Widget {
   }
 
   refresh(): void {
-    this._showLoading();
+    this._setLoading(true);
     this._setRefreshSpinning(true);
-    // `_fetch` is filesystem-fast, so without a floor the refresh icon would
-    // spin for a single frame and read as "nothing happened". Hold the
-    // spinner for at least ~500 ms so the click visibly registers.
+    // `_fetch` is filesystem-fast, so without a floor the spinner would show
+    // for a single frame and read as "nothing happened". Hold it for at least
+    // ~500 ms so the click visibly registers as a full re-poll.
     const minSpin = new Promise<void>(resolve =>
       window.setTimeout(resolve, 500)
     );
     Promise.all([
       this._fetch().catch(err => this._showError(err)),
       minSpin
-    ]).finally(() => this._setRefreshSpinning(false));
+    ]).finally(() => {
+      this._setRefreshSpinning(false);
+      this._setLoading(false);
+    });
   }
 
   /** Choose how rows are labelled: by session name, folder name, or path. */
@@ -242,11 +245,24 @@ export class ClaudeCodeSessionsWidget extends Widget {
     const body = document.createElement('div');
     body.className = 'jp-ClaudeSessionsPanel-body';
 
+    // Refresh veil + spinner, shown only during an explicit refresh. It lives
+    // on the root (not the body) so `_render` - which wipes the body - never
+    // removes it.
+    const loading = document.createElement('div');
+    loading.className = 'jp-ClaudeSessionsPanel-loading';
+    loading.hidden = true;
+    const loadingSpinner = document.createElement('div');
+    loadingSpinner.className =
+      'jp-claude-sessions-panel-spinner jp-ClaudeSessionsPanel-loadingSpinner';
+    loading.appendChild(loadingSpinner);
+
     root.appendChild(header);
     root.appendChild(search);
     root.appendChild(body);
+    root.appendChild(loading);
 
     this._bodyEl = body;
+    this._loadingEl = loading;
   }
 
   /** Show / hide the filter input. Hiding also clears the active filter
@@ -357,8 +373,13 @@ export class ClaudeCodeSessionsWidget extends Widget {
     );
   }
 
-  private _showLoading(): void {
-    // No visual indicator - the spinning refresh button conveys loading state.
+  /** Raise or clear the full-panel refresh veil. Only the explicit refresh
+   * path calls this; the background poll fetches silently so the panel never
+   * flashes a spinner on its own. */
+  private _setLoading(on: boolean): void {
+    if (this._loadingEl) {
+      this._loadingEl.hidden = !on;
+    }
   }
 
   private _showError(err: unknown): void {
@@ -1249,6 +1270,16 @@ export class ClaudeCodeSessionsWidget extends Widget {
       }
     });
 
+    this._commands.addCommand('claude-code-sessions:copy-session-id', {
+      label: 'Copy Session ID',
+      execute: () => {
+        const id = this._activeSession?.session_id;
+        if (id) {
+          Clipboard.copyToSystem(id);
+        }
+      }
+    });
+
     this._commands.addCommand('claude-code-sessions:cleanup-parallel', {
       label: () =>
         `Clean Up Parallel Sessions (${this._activeSession?.extra_sessions ?? 0})`,
@@ -1375,6 +1406,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
       command: 'claude-code-sessions:toggle-favourite'
     });
     this._contextMenu.addItem({ command: 'claude-code-sessions:copy-path' });
+    this._contextMenu.addItem({
+      command: 'claude-code-sessions:copy-session-id'
+    });
     this._contextMenu.addItem({ type: 'separator' });
     if (withBranches) {
       this._contextMenu.addItem({
@@ -1435,6 +1469,22 @@ export class ClaudeCodeSessionsWidget extends Widget {
     }
     this._rebuildContextMenu(hasBranches);
     this._contextMenu.open(x, y);
+  }
+
+  /** A compact copy button for a popup row that copies the given session id
+   * to the system clipboard. ``stopPropagation`` keeps the click from
+   * switching or selecting the row it sits in. */
+  private _branchCopyButton(sessionId: string): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'jp-ClaudeSessionsPanel-branchCopy';
+    btn.title = 'Copy session id';
+    copyIcon.element({ container: btn });
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      Clipboard.copyToSystem(sessionId);
+    });
+    return btn;
   }
 
   /** Popup with the project's full branch list - browse, filter, switch
@@ -1524,6 +1574,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
       badge.className = 'jp-ClaudeSessionsPanel-branchCurrentBadge';
       badge.textContent = 'current';
       currentRow.appendChild(badge);
+      currentRow.appendChild(this._branchCopyButton(current));
       list.appendChild(currentRow);
 
       const matches = visibleMatches();
@@ -1565,6 +1616,8 @@ export class ClaudeCodeSessionsWidget extends Widget {
         time.className = 'jp-ClaudeSessionsPanel-branchTime';
         time.textContent = this._formatRelativeTime(b.file_mtime);
         row.appendChild(time);
+
+        row.appendChild(this._branchCopyButton(b.session_id));
 
         row.addEventListener('click', () => {
           // Selection mode: while anything is ticked, row clicks toggle
@@ -1677,8 +1730,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
    * custom-title record on its first turn and re-stamps it every turn, so
    * it sticks even though the fork inherits the parent's title. The fork is
    * the newest JSONL, so recency resolution makes it the row's current
-   * conversation without an explicit switch. ``_stampForkTitle`` still runs
-   * to seed the title and refresh the row promptly while claude starts.
+   * conversation without an explicit switch. claude writes the fork's JSONL
+   * lazily (on its first turn), so the branch appears on the next poll once
+   * it materialises - the panel cannot list a file that does not exist yet.
    */
   private async _branchSession(forceDangerous: boolean): Promise<void> {
     const session = this._activeSession;
@@ -1726,48 +1780,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
     } finally {
       spinner.dispose();
     }
-    // Stamp the name in the background once the forked JSONL appears -
-    // claude writes it on its first record, typically within seconds.
-    void this._stampForkTitle(session.encoded_path, forkId, title);
-  }
-
-  /** Retry sessions/set-title until the forked JSONL exists (404 while it
-   * does not), then refresh so the row shows the named fork as current. */
-  private async _stampForkTitle(
-    encodedPath: string,
-    sessionId: string,
-    title: string
-  ): Promise<void> {
-    for (let attempt = 0; attempt < 30; attempt++) {
-      try {
-        await requestAPI<{ ok: boolean }>(
-          'sessions/set-title',
-          this._serverSettings,
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              encoded_path: encodedPath,
-              session_id: sessionId,
-              title
-            })
-          }
-        );
-        await this._fetch();
-        return;
-      } catch (err) {
-        const notYet =
-          err instanceof ServerConnection.ResponseError &&
-          err.response.status === 404;
-        if (!notYet) {
-          break;
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-    Notification.warning(
-      `Branched session started, but the name "${title}" could not be applied - use /rename in the session.`,
-      { autoClose: 6000 }
-    );
+    // No post-hoc title write: claude owns the name via ``-n`` and stamps it
+    // on the fork's first turn. The branch surfaces on the next poll once
+    // claude materialises its JSONL.
   }
 
   /** Switch the active row's project to another conversation branch.
@@ -1838,6 +1853,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private readonly _app: JupyterFrontEnd;
   private readonly _serverSettings: ServerConnection.ISettings;
   private _bodyEl!: HTMLDivElement;
+  private _loadingEl: HTMLElement | null = null;
   private _refreshBtn: HTMLButtonElement | null = null;
   private _filterBtn: HTMLButtonElement | null = null;
   private _searchEl: HTMLInputElement | null = null;

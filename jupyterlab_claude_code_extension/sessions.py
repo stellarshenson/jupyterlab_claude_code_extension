@@ -729,50 +729,6 @@ def switch_branch(claude_root: Path, encoded_path: str, session_id: str) -> dict
     }
 
 
-def set_branch_title(
-    claude_root: Path,
-    encoded_path: str,
-    session_id: str,
-    title: str,
-) -> bool | None:
-    """Stamp a conversation with a custom title.
-
-    Appends a ``custom-title`` record to the session JSONL - the same record
-    claude's own ``/rename`` writes and the one ``_scan_jsonl_for_custom_title``
-    resolves (last record wins). Used to name a freshly forked branch once
-    claude has materialised its JSONL. Returns True on success, False when
-    the JSONL does not exist (yet) and None on invalid input.
-    """
-    if (
-        not isinstance(session_id, str)
-        or not session_id
-        or "/" in session_id
-        or session_id in (".", "..")
-    ):
-        return None
-    if not isinstance(title, str) or not title.strip():
-        return None
-    project_dir = _safe_project_dir(claude_root, encoded_path)
-    if project_dir is None:
-        return None
-    jsonl = project_dir / f"{session_id}.jsonl"
-    if not jsonl.is_file():
-        return False
-    record = {
-        "type": "custom-title",
-        "customTitle": title.strip(),
-        "sessionId": session_id,
-    }
-    # Preserve the file times: titling a conversation must not bump its
-    # mtime and silently make it the project's current one - recency
-    # switching stays the job of switch_branch / claude itself.
-    stat = jsonl.stat()
-    with jsonl.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(record) + "\n")
-    os.utime(jsonl, (stat.st_atime, stat.st_mtime))
-    return True
-
-
 def delete_branches(
     claude_root: Path,
     encoded_path: str,

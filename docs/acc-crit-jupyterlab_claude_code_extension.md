@@ -1,0 +1,261 @@
+# Acceptance Criteria - jupyterlab_claude_code_extension
+
+Acceptance criteria for the whole plugin - one section per feature or panel behaviour. `[ ]` todo, `[x]` done; each criterion's indented `log:` lines are its dated evolution, appended never overwritten.
+
+## Contents
+
+- [Row Columns](#row-columns)
+- [Row Age Emphasis](#row-age-emphasis)
+- [Panel Refresh](#panel-refresh)
+- [Branch Session](#branch-session)
+- [Branch Switching](#branch-switching)
+- [Copy Session ID](#copy-session-id)
+- [Statusline CLI](#statusline-cli)
+
+## Row Columns
+
+Panel session rows lay out their trailing indicators as aligned columns instead of inline jumble: dot | name | favourite star | time. The fixed-width time column is the right-edge alignment anchor across all rows.
+
+- [x] **Star column** - favourite star renders in its own column BEFORE the time column (child order: dot, name, star, time)
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Time column** - time-ago label is a fixed-width (3.5em) right-aligned column so `now / 5m ago / 3d ago` values line up across rows
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+  - log: 2026-06-12 width narrowed 52px -> 3.5em (~40px; too much dead space between star and time, em so it scales with the font)
+  - log: 2026-06-12 fixed width -> min-width 3.5em + nowrap (two-digit day labels like `13d ago` wrapped and bled into the next row)
+  - log: 2026-06-12 min-width -> fixed width 4em + nowrap (variable column width made the star column drift per row)
+- [x] **Star visibility rule unchanged** - star shown only when the session is favourited and outside the Favourites section
+  - log: 2026-06-12 criterion added (pre-existing behaviour, restated for the new layout)
+- [x] **Paler live dot** - the green remote-control dot is softened (opacity 0.75 over `--jp-success-color1`), keeping the glow but reading less loud next to row text
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Stars aligned panel-wide** - favourite stars line up vertically across the entire panel: time column is fixed-width (4em), every row keeps the time slot (empty when no `file_mtime`), and every section list reserves the scrollbar gutter (`scrollbar-gutter: stable`) so a scrolling section does not shift its columns
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Edge: row without star or time** - rows missing the star (not favourited) or the time (no `file_mtime`) still align; name flexes, the always-present time slot anchors the right edge
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+  - log: 2026-06-12 time slot now always rendered (empty when no mtime) so the star column never slides right
+
+## Row Age Emphasis
+
+Session row name colour reflects last activity: rows active within the last minute read bright (cyan-ish), rows idle for over a week dim slightly, everything between stays normal.
+
+- [x] **Recent emphasis** - last activity < 60 s -> row gets `jp-mod-recentlyActive`, name coloured `--jp-brand-color1` (theme-aware cyan); same threshold as the time formatter's `now` bucket
+  - log: 2026-06-12 implemented
+- [x] **Stale dim** - last activity > 7 d -> row gets `jp-mod-stale`, whole row at 0.65 opacity, still readable and clickable
+  - log: 2026-06-12 implemented
+- [x] **Normal band** - between 60 s and 7 d -> no age class, default colours
+  - log: 2026-06-12 implemented
+- [x] **Refresh-driven** - states decay/promote on the next panel refresh (poll or manual), no per-row timers
+  - log: 2026-06-12 implemented
+- [x] **Theme legibility** - emphasis and dim legible in dark and light JupyterLab themes (theme variables only, no hardcoded colours)
+  - log: 2026-06-12 implemented
+- [x] **Independent signals** - live green dot (remote control) and age emphasis are independent; a row can show both
+  - log: 2026-06-12 implemented
+- [x] **All sections** - favourites, recent, all and search results inherit the same styling (single row renderer)
+  - log: 2026-06-12 implemented
+- [x] **Edge: missing mtime** - missing/zero `file_mtime` -> no age class, normal colour
+  - log: 2026-06-12 implemented
+- [x] **Now label colour** - the `now` time label is rendered in `--jp-brand-color1` via the `jp-mod-recentlyActive` class, same colour as the emphasised name (the `now` bucket and the class share the <60 s threshold)
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+
+## Panel Refresh
+
+The panel auto-polls the backend every 30 s and reads on-disk truth (`cache: 'no-store'`). The manual refresh button forces an immediate full re-poll and signals it with a spinner in the panel body; the background poll stays silent so the panel never flickers on its own.
+
+- [x] **Forced re-poll** - clicking the refresh button triggers an immediate full `_fetch` (no-store), independent of the 30 s poll timer
+  - log: 2026-06-21 criterion added
+  - log: 2026-06-21 implemented - `refresh()` calls `_fetch()` directly, jest contract green
+- [x] **Panel-body spinner** - while a manual refresh is in flight a spinner shows in the panel body; it clears when the fetch resolves (success or error)
+  - log: 2026-06-21 criterion added
+  - log: 2026-06-21 implemented - full-panel veil (`_loadingEl`) raised by `_setLoading(true)`, cleared in `refresh()`'s `finally`
+- [x] **Background poll silent** - the periodic 30 s poll does NOT show the panel-body spinner; the body spinner is reserved for the explicit refresh (normally not required)
+  - log: 2026-06-21 criterion added
+  - log: 2026-06-21 implemented - `_startPolling` calls `_fetch()` directly, never `_setLoading`; jest asserts the poll body contains no `_setLoading`
+- [x] **Minimum visible duration** - the spinner stays visible long enough to read (the existing ~500 ms floor on the refresh action), even though `_fetch` is filesystem-fast
+  - log: 2026-06-21 criterion added
+  - log: 2026-06-21 implemented - `minSpin` 500 ms floor retained, now also gates the body veil
+- [x] **Veil hides correctly** - the veil starts hidden and is toggled via the `hidden` attribute; the CSS rule is gated on `:not([hidden])` so an author `display` never beats the UA `[hidden] { display: none }` and pins the veil permanently on
+  - log: 2026-06-21 criterion added after adversarial review caught the un-gated rule (CRITICAL: veil stuck visible, blocking all clicks); fixed with `:not([hidden])`, regression-guarded in jest, round 2 SHIP
+- [x] **Edge: refresh during background poll** - a manual refresh while a background poll is mid-flight still forces its own fetch and raises the veil; the veil lives on the root so a concurrent `_render` (body wipe) never removes it; last render wins, no lost update
+  - log: 2026-06-21 criterion added
+  - log: 2026-06-21 implemented - veil appended to root not body; adversarial review confirmed `_render` cannot wipe it
+- [x] **Edge: error during forced refresh** - if the forced fetch errors, the body veil clears and the error surfaces as it does today; the panel is not left spinning
+  - log: 2026-06-21 criterion added
+  - log: 2026-06-21 implemented - `_fetch().catch(...)` inside the `Promise.all`, `_setLoading(false)` in `finally`
+
+## Branch Session
+
+Context-menu action forks the row's current conversation into a new named session using claude's native fork (`claude --resume <current> --fork-session --session-id <new uuid> -n <name>`), opened in a new terminal. The fork's uuid is generated by the frontend; the name is owned by claude via `-n` (it writes the chosen name as a `custom-title` record on its first turn and re-stamps every turn).
+
+- [x] **Menu items** - context menu offers a "Branch Session" submenu (branch icon) with two entries: "Normal" and "Skip Permissions" (shield icon), mirroring the + button's two launch modes; no ellipsis on the labels
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+  - log: 2026-06-12 two main-menu items collapsed into one submenu, ellipsis dropped
+- [x] **Name popup** - selecting either item opens a name input dialog; cancel or empty name aborts with no side effects
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented via InputDialog.getText, pending release
+- [x] **Fork launch** - confirm launches a terminal at the project path running `claude --resume <current> --fork-session --session-id <uuid> -n <name>`; skip-permissions mode appends `--dangerously-skip-permissions`
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+  - log: 2026-06-21 `-n <name>` added to the launch argv (v1.2.22)
+- [x] **Becomes current** - the forked JSONL is the project's newest, so the recency resolution makes it the row's current conversation without an explicit switch
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented (by construction, no extra code), pending release
+- [x] **Name ownership** - the chosen name is forced by `claude -n <name>`; claude writes it as a `custom-title` record on its first turn and re-stamps it every turn, so it sticks even though the fork inherits the parent's title; no post-hoc `set-title` append is involved
+  - log: 2026-06-21 criterion added - supersedes the obsolete "Name stamping" via `sessions/set-title`; DEF-1
+  - log: 2026-06-21 implemented - set-title poll + false warning removed, name owned by `claude -n`; jest 43 + pytest 79 green, adversarial review SHIP
+- [x] **Branch badge** - rows with more than one conversation show a branch icon plus total count after the name (replaces the plain `(N)` bracket text)
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Edge: fork JSONL is lazy** - claude materialises `<forkId>.jsonl` only on the first user turn in the new session, not at launch; until then the panel cannot list the branch (it reads on-disk truth); the row shows the branch on the next poll after the file exists; no warning is shown for the gap
+  - log: 2026-06-21 criterion added - DEF-2; confirmed empirically (file absent through 20 s idle; claude rejects a pre-seeded id with "Session ID ... is already in use", so the file cannot be created ahead of time)
+  - log: 2026-06-21 implemented - false warning removed; gap documented as a claude limitation (wontfix-external), mitigated by the forced refresh re-poll
+- [x] **Edge: fork without session id** - backend rejects `fork_session_id` without `session_id` (400 `invalid_fork_session_id`)
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+
+### Branch Session - Notes
+
+- Fork mechanism is claude's own `--fork-session` (battle-tested) rather than a JSONL copy; the name is owned by `claude -n`, so no on-disk title write by the extension is needed
+- The fork's JSONL is created lazily by claude on the first turn; the extension cannot pre-create it (claude refuses a session id whose file already exists) nor force the first turn, so the branch becomes visible only after the user interacts - this is a claude limitation, not an extension bug (DEF-2)
+- Main vs branch has no intrinsic marker in claude's data - "main" is whatever the recency resolution picks; the popup badges it `current`
+- The obsolete `sessions/set-title` endpoint and its `_stampForkTitle` poll were removed once `-n` took over naming (DEF-1); they only ever existed as the pre-`-n` naming path and their 30 s timeout produced a false failure warning
+
+### Branch Session - API
+
+- `POST launch-terminal` body gains optional `fork_session_id` (requires `session_id`) and optional `name` -> argv `--resume <sid> --fork-session --session-id <fork id> -n <name>`; 400 `invalid_fork_session_id`, 400 `invalid_name` for a blank name
+
+## Branch Switching
+
+Context-menu submenu switches a project's current conversation to another branch (parallel session JSONL). Persistence = touch selected JSONL mtime; recency resolution, cleanup and `claude --resume` picker all agree, no extra state.
+
+- [x] **Submenu** - row with >1 conversation JSONL shows "Switch and Manage Sessions (N)" in context menu, N = count of other conversations; hidden when the project has a single session
+  - log: 2026-06-12 implemented as "Switch Conversation Branch" (v1.2.2)
+  - log: 2026-06-12 renamed to "Switch and Manage Sessions (N)" for the manage/delete scope, pending
+  - log: 2026-06-12 implemented, pending release
+- [x] **List** - other conversations only, newest first, max 5 in submenu; label = custom title > index summary > short session id, plus relative time
+  - log: 2026-06-12 implemented (v1.2.2)
+- [x] **Names** - submenu and popup entries display conversation names, never the project path (all branches share it); name resolution per List label rule
+  - log: 2026-06-12 implemented, pending release
+- [x] **Id** - entries show the short session id in brackets after the name, e.g. `home (3f2a1b9c)`; suffix skipped when the label already is the short id fallback
+  - log: 2026-06-12 implemented, pending release
+- [x] **Manage entry** - "Manage Sessions... (N)" submenu item always present (any branch count), opens the popup; the popup is the management hub and must be reachable even with 2-5 conversations
+  - log: 2026-06-12 implemented as "More... (N total)", shown only at >5 branches (v1.2.2)
+  - log: 2026-06-12 reworked to always-present "Manage Sessions... (N)", pending
+  - log: 2026-06-12 implemented, pending release
+- [x] **More** - popup shows full branch list, browse + search over large lists, clicking an entry switches
+  - log: 2026-06-12 implemented (v1.2.2)
+- [x] **Switch** - selected JSONL becomes current; row session id / name / summary / recency update on refresh; click-to-resume opens it
+  - log: 2026-06-12 implemented (v1.2.2)
+- [x] **Count** - row name shows the total conversation count, only when N > 1; tooltip gets `Conversations: N` line
+  - log: 2026-06-12 implemented as `name (N)` bracket text (v1.2.2)
+  - log: 2026-06-12 display changed to branch icon + count badge (see Branch Session), pending release
+- [x] **Edge: branch removed before click** - switch returns 404 `branch_not_found`, panel shows error, refreshes; no row points at missing file
+  - log: 2026-06-12 implemented (v1.2.2)
+- [x] **Edge: current JSONL removed externally** - next most recent becomes current on next refresh
+  - log: 2026-06-12 implemented (v1.2.2)
+- [x] **Edge: switch to already-current** - no-op success
+  - log: 2026-06-12 implemented (v1.2.2)
+- [x] **Edge: cwd-inconsistent branch** - cannot become current (`_resolve_latest` skips it); response reports resolved session, panel warns
+  - log: 2026-06-12 implemented (v1.2.2)
+  - log: 2026-06-12 semantics narrowed to genuinely foreign cwds - subdirectory cwds now consistent (see Subdir cwd)
+- [x] **Subdir cwd** - branch whose recorded cwd is a subdirectory of the project path is legitimate and can become current; the row's project path stays the project root, not the subdirectory
+  - log: 2026-06-12 criterion added after real-world failure (tail cwd in `experiments/grounding` subfolder blocked switch)
+  - log: 2026-06-12 implemented via `_project_path_for_cwd`, pending release
+- [x] **Edge: sibling-prefix dir** - cwd `/x/foo-bar` does not match project `/x/foo`; the character after the project path must be a real `/`
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Popup design language** - popup follows the documented JupyterLab design language (24px rows, 2px radii, compact brand-focus search input, fixed-width right-aligned time column, jp-mod state classes); reference: jupyterlab-extension skill design-language.md
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Popup current row** - current conversation shown as the first popup row, marked `current`, non-selectable and non-deletable; only the extras below it are manageable
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Popup delete: select** - popup rows are selectable, one or many, via checkbox per row in its own click zone; selection survives search filtering
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Popup selection mode** - once any checkbox is ticked, row clicks toggle selection instead of switching, until the selection is emptied; prevents accidental switch mid-selection
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Popup delete: select all** - select-all control toggles every selectable row; the current main is excluded, so select-all + Delete removes all parallel conversations
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Popup delete: button** - Delete button in the popup shows the selection count, e.g. `Delete (3)`; disabled when nothing selected
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Popup delete: confirm** - deleting opens a confirmation dialog naming the project and the count (Cancel and a red Delete button); delete runs only on accept
+  - log: 2026-06-12 criterion added as inline two-step `Confirm delete (N)` button
+  - log: 2026-06-17 replaced the two-step button with a confirmation dialog (v1.2.21)
+- [x] **Popup delete: action** - clicking Delete removes the selected branches' JSONLs plus their subagent directories, honouring JupyterLab's move-to-trash setting (same as cleanup); popup list and row count refresh in place
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Edge: delete already-removed branch** - file gone before delete -> treated as deleted, no error, list refreshes
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Edge: delete all listed branches** - popup empties, project keeps its current conversation, row count drops to plain name
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+
+### Branch Switching - Notes
+
+- The 5 inline submenu items exist to minimise clicks when switching between often-used sessions - right-click -> pick, two interactions total; the popup is the fallback for everything beyond the recent 5 and for management
+- Division of responsibility: "Clean Up Parallel Sessions (N)" stays the comprehensive one-shot removal (extras plus subagent directories, no selection); the switch popup is targeted - switch first, delete individual sessions second. The two code paths stay separate by design
+
+### Branch Switching - API
+
+- `GET sessions/branches?encoded_path=...` -> `{current, total, branches: [{session_id, file_mtime, label}]}`
+- `POST sessions/switch` body `{encoded_path, session_id}` -> `{requested, current}`; 404 `branch_not_found`, 400 invalid input
+- `POST sessions/delete-branches` body `{encoded_path, session_ids: [...]}` -> `{removed_count}`; 400 invalid input
+
+## Copy Session ID
+
+Copy a conversation's session id (the `<uuid>` of its JSONL) to the clipboard, both from a row's context menu (the row's current conversation) and from each row of the "Manage Sessions" popup (any parallel conversation). Uses Lumino's `Clipboard.copyToSystem`, matching the existing "Copy Path" action - a silent system copy, no notification.
+
+- [x] **Context menu item** - the row context menu offers "Copy Session ID" (next to "Copy Path"); selecting it copies the row's current `session_id` to the clipboard
+  - log: 2026-06-21 criterion added
+  - log: 2026-06-21 implemented - `claude-code-sessions:copy-session-id` command, jest contract green
+- [x] **Popup per-row copy** - each row in the "Manage Sessions" popup has a copy affordance that copies that row's `session_id` (so non-current branches are reachable too), without selecting or switching the row
+  - log: 2026-06-21 criterion added
+  - log: 2026-06-21 implemented - `_branchCopyButton` on the current row and every branch row, jest contract green
+- [x] **Full id copied** - the full uuid is placed on the clipboard, not the truncated/short form shown in labels
+  - log: 2026-06-21 criterion added
+  - log: 2026-06-21 implemented - copies `session_id` / `current`, not the short slice
+- [x] **Silent copy** - uses `Clipboard.copyToSystem` like "Copy Path"; no confirmation notification, consistent with the existing copy affordance; works in any context (synthetic copy event, no `navigator.clipboard` dependency)
+  - log: 2026-06-21 criterion added
+  - log: 2026-06-21 implemented
+- [x] **Edge: popup copy does not toggle selection** - clicking the copy affordance inside the popup copies only; it does not tick the row checkbox, switch the conversation, or close the popup
+  - log: 2026-06-21 criterion added
+  - log: 2026-06-21 implemented - `stopPropagation` on the button (fires before the row's bubble-phase handler) plus `type='button'`; adversarial review confirmed the guard holds
+
+## Statusline CLI
+
+Companion CLI `jupyterlab_claude_code install-claude-statusline` installs the powerline statusline from its home project (https://github.com/stellarshenson/claude-code-statusline) into the user's Claude directory and wires `statusLine` in settings. The script is NOT vendored - it is downloaded from the repo at install time.
+
+- [x] **Entry point** - `jupyterlab_claude_code` console script ships with the package (`[project.scripts]`); `install-claude-statusline` subcommand present in `--help`
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Confirmation** - the command states the download URL and target paths, then asks `Proceed? [y/N]`; anything but y/yes aborts with no side effects; `-y/--yes` skips the prompt
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Download from repo** - script fetched from the claude-code-statusline GitHub raw URL at run time, never bundled in the wheel
+  - log: 2026-06-12 criterion added; vendored copy from the first iteration removed
+  - log: 2026-06-12 implemented, pending release
+- [x] **Install** - script written to `<claude-dir>/statusline-command.sh`, marked executable; `--claude-dir` overrides the default `~/.claude`
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Settings wiring** - `statusLine` block (`type: command`, `command: bash <path>`, `padding: 0`) merged into `settings.json`, all other settings preserved; file created when absent
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Edge: invalid settings.json** - existing file that is not a JSON object -> error exit 1, file left untouched
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Edge: non-script response** - download that does not start with `#!` (e.g. an HTML error page) -> error, nothing installed
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release
+- [x] **Edge: existing statusline** - re-running overwrites the script and statusLine block (idempotent install)
+  - log: 2026-06-12 criterion added
+  - log: 2026-06-12 implemented, pending release

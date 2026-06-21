@@ -380,17 +380,14 @@ describe('launch spinner dismiss contract', () => {
       expect(branch).toMatch(/session_id: session\.session_id/);
       // The name is forced at launch (claude -n <name>) so it sticks.
       expect(branch).toMatch(/name: title/);
-      expect(branch).toMatch(/_stampForkTitle/);
     });
 
-    it('fork title stamping retries on 404 until the JSONL appears', () => {
-      const stamp = (widgetSrc.match(
-        /private async _stampForkTitle[\s\S]*?\n  \}/
-      ) ?? [''])[0];
-      expect(stamp).toMatch(/sessions\/set-title/);
-      expect(stamp).toMatch(/status === 404/);
-      expect(stamp).toMatch(/await this\._fetch\(\)/);
-      expect(stamp).toMatch(/Notification\.warning/);
+    it('branch session does not post-hoc stamp a title (claude -n owns it)', () => {
+      // The obsolete sessions/set-title poll and its false "could not be
+      // applied" warning were removed once -n took over naming (DEF-1).
+      expect(widgetSrc).not.toMatch(/_stampForkTitle/);
+      expect(widgetSrc).not.toMatch(/sessions\/set-title/);
+      expect(widgetSrc).not.toMatch(/could not be applied/);
     });
 
     it('live dot is softened with reduced opacity', () => {
@@ -403,6 +400,68 @@ describe('launch spinner dismiss contract', () => {
       ])[0];
       expect(dot).toMatch(/--jp-success-color1/);
       expect(dot).toMatch(/opacity: 0\.75/);
+    });
+
+    it('Copy Session ID command copies the active session id', () => {
+      const cmd = (widgetSrc.match(
+        /addCommand\('claude-code-sessions:copy-session-id'[\s\S]*?\}\);/
+      ) ?? [''])[0];
+      expect(cmd).toMatch(/label: 'Copy Session ID'/);
+      expect(cmd).toMatch(/this\._activeSession\?\.session_id/);
+      expect(cmd).toMatch(/Clipboard\.copyToSystem\(id\)/);
+    });
+
+    it('Copy Session ID sits in the context menu next to Copy Path', () => {
+      expect(widgetSrc).toMatch(
+        /copy-path'[\s\S]*?claude-code-sessions:copy-session-id/
+      );
+    });
+
+    it('popup rows carry a copy button that copies without switching', () => {
+      const helper = (widgetSrc.match(
+        /private _branchCopyButton[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(helper).toMatch(/branchCopy/);
+      expect(helper).toMatch(/copyIcon\.element/);
+      // type='button' so the button never acts as a form submit.
+      expect(helper).toMatch(/btn\.type = 'button'/);
+      expect(helper).toMatch(/stopPropagation/);
+      expect(helper).toMatch(/Clipboard\.copyToSystem\(sessionId\)/);
+      // Wired into the current row and every branch row.
+      expect(widgetSrc).toMatch(/this\._branchCopyButton\(current\)/);
+      expect(widgetSrc).toMatch(/this\._branchCopyButton\(b\.session_id\)/);
+    });
+
+    it('refresh raises the panel veil; the background poll stays silent', () => {
+      const refresh = (widgetSrc.match(
+        /refresh\(\): void \{[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(refresh).toMatch(/this\._setLoading\(true\)/);
+      expect(refresh).toMatch(/this\._setLoading\(false\)/);
+      const poll = (widgetSrc.match(/private _startPolling[\s\S]*?\n  \}/) ?? [
+        ''
+      ])[0];
+      expect(poll).not.toMatch(/_setLoading/);
+    });
+
+    it('refresh veil is built on the root so _render never wipes it', () => {
+      expect(widgetSrc).toMatch(/jp-ClaudeSessionsPanel-loading/);
+      expect(widgetSrc).toMatch(/root\.appendChild\(loading\)/);
+      // Starts hidden and is toggled via the `hidden` attribute.
+      expect(widgetSrc).toMatch(/loading\.hidden = true/);
+      const css: string = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'style', 'base.css'),
+        'utf-8'
+      );
+      // The veil rule MUST be gated on :not([hidden]); a bare
+      // `.loading { display: flex }` author rule beats the UA
+      // `[hidden] { display: none }` and pins the veil permanently on.
+      const veil = (css.match(
+        /\.jp-ClaudeSessionsPanel-loading:not\(\[hidden\]\) \{[\s\S]*?\}/
+      ) ?? [''])[0];
+      expect(veil).toMatch(/position: absolute/);
+      expect(veil).toMatch(/inset: 0/);
+      expect(veil).toMatch(/display: flex/);
     });
   });
 

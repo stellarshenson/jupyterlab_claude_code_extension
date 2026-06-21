@@ -4,6 +4,17 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.23] - 2026-06-21
+
+### Added
+
+- "Copy Session ID" right-click menu item that copies the row's current conversation id to the clipboard; the Manage Sessions popup also gains a per-row copy button so any parallel conversation's id can be copied without switching to it
+- The refresh button now shows a spinner over the panel while it re-reads the session list; the background 30s auto-poll stays silent (no spinner)
+
+### Fixed
+
+- Branching a session no longer shows a false "name could not be applied - use /rename" warning: the name is owned by `claude -n` and applied on the session's first turn, so the obsolete post-launch title poll that warned while Claude had not yet written the fork's file was removed
+
 ## [1.2.22] - 2026-06-17
 
 ### Fixed

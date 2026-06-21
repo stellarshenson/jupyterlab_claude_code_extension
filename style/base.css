@@ -6,6 +6,7 @@
 .jp-ClaudeSessionsPanel {
   display: flex;
   flex-direction: column;
+  position: relative;
   background-color: var(--jp-layout-color1);
   color: var(--jp-ui-font-color1);
   font-family: var(--jp-ui-font-family);
@@ -274,6 +275,26 @@
   display: inline-block;
 }
 
+/* Full-panel veil shown only during an explicit refresh (refresh button or
+   panel show) - the background 30 s poll never raises it. The rule is gated
+   on :not([hidden]) because this author `display` would otherwise beat the
+   UA `[hidden] { display: none }` rule and pin the veil permanently on. */
+.jp-ClaudeSessionsPanel-loading:not([hidden]) {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--jp-layout-color1) 65%, transparent);
+}
+
+.jp-ClaudeSessionsPanel-loadingSpinner {
+  width: 24px;
+  height: 24px;
+  border-width: 3px;
+}
+
 .jp-ClaudeSessionsPanel-launchOverlay {
   display: flex;
   flex-direction: column;
@@ -379,9 +400,26 @@
 }
 
 .jp-ClaudeSessionsPanel-branchLabel {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.jp-ClaudeSessionsPanel-branchCopy {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--jp-ui-font-color2);
+  cursor: pointer;
+}
+
+.jp-ClaudeSessionsPanel-branchCopy:hover {
+  color: var(--jp-ui-font-color1);
 }
 
 .jp-ClaudeSessionsPanel-branchTime {
