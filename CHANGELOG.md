@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.24] - 2026-06-21
+
+### Changed
+
+- Internal docs only: simplified the project's defect-tracking document format (Contents TOC over flat DEF-N sections, no Open/Fixed split); no functional or packaged change
+
 ## [1.2.23] - 2026-06-21
 
 ### Added
