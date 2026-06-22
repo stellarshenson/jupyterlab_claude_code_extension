@@ -9,6 +9,7 @@ Acceptance criteria for the whole plugin - one section per feature or panel beha
 - [Panel Refresh](#panel-refresh)
 - [Branch Session](#branch-session)
 - [Branch Switching](#branch-switching)
+- [Sessions Management Screen](#sessions-management-screen)
 - [Copy Session ID](#copy-session-id)
 - [Statusline CLI](#statusline-cli)
 
@@ -169,36 +170,9 @@ Context-menu submenu switches a project's current conversation to another branch
 - [x] **Edge: sibling-prefix dir** - cwd `/x/foo-bar` does not match project `/x/foo`; the character after the project path must be a real `/`
   - log: 2026-06-12 criterion added
   - log: 2026-06-12 implemented, pending release
-- [x] **Popup design language** - popup follows the documented JupyterLab design language (24px rows, 2px radii, compact brand-focus search input, fixed-width right-aligned time column, jp-mod state classes); reference: jupyterlab-extension skill design-language.md
-  - log: 2026-06-12 criterion added
-  - log: 2026-06-12 implemented, pending release
-- [x] **Popup current row** - current conversation shown as the first popup row, marked `current`, non-selectable and non-deletable; only the extras below it are manageable
-  - log: 2026-06-12 criterion added
-  - log: 2026-06-12 implemented, pending release
-- [x] **Popup delete: select** - popup rows are selectable, one or many, via checkbox per row in its own click zone; selection survives search filtering
-  - log: 2026-06-12 criterion added
-  - log: 2026-06-12 implemented, pending release
-- [x] **Popup selection mode** - once any checkbox is ticked, row clicks toggle selection instead of switching, until the selection is emptied; prevents accidental switch mid-selection
-  - log: 2026-06-12 criterion added
-  - log: 2026-06-12 implemented, pending release
-- [x] **Popup delete: select all** - select-all control toggles every selectable row; the current main is excluded, so select-all + Delete removes all parallel conversations
-  - log: 2026-06-12 criterion added
-  - log: 2026-06-12 implemented, pending release
-- [x] **Popup delete: button** - Delete button in the popup shows the selection count, e.g. `Delete (3)`; disabled when nothing selected
-  - log: 2026-06-12 criterion added
-  - log: 2026-06-12 implemented, pending release
-- [x] **Popup delete: confirm** - deleting opens a confirmation dialog naming the project and the count (Cancel and a red Delete button); delete runs only on accept
-  - log: 2026-06-12 criterion added as inline two-step `Confirm delete (N)` button
-  - log: 2026-06-17 replaced the two-step button with a confirmation dialog (v1.2.21)
-- [x] **Popup delete: action** - clicking Delete removes the selected branches' JSONLs plus their subagent directories, honouring JupyterLab's move-to-trash setting (same as cleanup); popup list and row count refresh in place
-  - log: 2026-06-12 criterion added
-  - log: 2026-06-12 implemented, pending release
-- [x] **Edge: delete already-removed branch** - file gone before delete -> treated as deleted, no error, list refreshes
-  - log: 2026-06-12 criterion added
-  - log: 2026-06-12 implemented, pending release
-- [x] **Edge: delete all listed branches** - popup empties, project keeps its current conversation, row count drops to plain name
-  - log: 2026-06-12 criterion added
-  - log: 2026-06-12 implemented, pending release
+- [x] **Popup opens management** - "Manage Sessions... (N)" opens the management popup; the popup's table layout, current-row accent, selection and delete behaviour live in [Sessions Management Screen](#sessions-management-screen)
+  - log: 2026-06-12 implemented as the switch popup (v1.2.2)
+  - log: 2026-06-21 popup management criteria moved to the Sessions Management Screen section (UX redesign)
 
 ### Branch Switching - Notes
 
@@ -210,6 +184,48 @@ Context-menu submenu switches a project's current conversation to another branch
 - `GET sessions/branches?encoded_path=...` -> `{current, total, branches: [{session_id, file_mtime, label}]}`
 - `POST sessions/switch` body `{encoded_path, session_id}` -> `{requested, current}`; 404 `branch_not_found`, 400 invalid input
 - `POST sessions/delete-branches` body `{encoded_path, session_ids: [...]}` -> `{removed_count}`; 400 invalid input
+
+## Sessions Management Screen
+
+The "Manage Sessions" popup (opened from the row context menu) is a scrollable table of a project's conversations - switch, copy id, select and delete. The current conversation is pinned and accented; deleting selected conversations is immediate (no confirmation) because they move to trash and a stacked dialog renders detached.
+
+- [x] **Dialog title** - the popup is a Lumino `Dialog` titled "Manage Sessions" with a single Cancel/Close button
+  - log: 2026-06-21 criterion added - retitled from "Switch and Manage Sessions" (UX redesign)
+- [x] **Table layout** - a search box, a header strip (select-all on the left, conversation count on the right), then a bordered scrollable list with aligned columns: select cell, name + short id, last-activity time, copy button
+  - log: 2026-06-21 criterion added; supersedes the flat popup list (UX redesign)
+- [x] **Current pinned + accented** - the current conversation is pinned at the top of the scroll area (`position: sticky`), accented with a `--jp-brand-color1` left bar, a `--jp-layout-color2` background and an uppercase brand "current" chip; its name reads at normal emphasis (not dimmed); it carries an empty select cell so the name column stays aligned, and it cannot be selected or deleted
+  - log: 2026-06-21 criterion added - replaces the dimmed first-row badge that read as inactive (UX redesign)
+- [x] **Switch** - clicking a non-current row while nothing is selected switches to that conversation and closes the popup
+  - log: 2026-06-21 implemented (carried from the switch popup)
+- [x] **Select** - a per-row checkbox (its own click zone) selects one or many; select-all toggles the visible (filtered) non-current rows; selection survives filtering; the footer shows "N selected"
+  - log: 2026-06-21 implemented (carried from the switch popup), footer count added
+- [x] **Selection mode** - while anything is selected, row clicks toggle selection instead of switching, until the selection is emptied
+  - log: 2026-06-21 implemented (carried from the switch popup)
+- [x] **Delete: no confirmation** - the footer "Delete (N)" button (error-coloured, disabled when nothing is selected) removes the selected conversations immediately, with NO confirmation dialog; their JSONLs plus subagent directories move to trash (honouring JupyterLab's setting); the table and the panel row count refresh in place
+  - log: 2026-06-21 criterion added - the prior confirmation dialog stacked a second Lumino dialog on the popup and rendered detached; removed it (UX redesign); confirmation now lives only on Clean Up Parallel Sessions and Remove from Claude
+- [x] **Confirmation policy** - confirmation dialogs are used ONLY for "Clean Up Parallel Sessions" and "Remove from Claude" (the bulk / whole-project destructive actions); per-conversation delete in this screen is not confirmed
+  - log: 2026-06-21 criterion added (UX redesign)
+- [x] **Delete feedback + recoverability** - replacing the confirmation with feedback (not a prompt): after a delete the footer shows a polite `aria-live` status "N moved to trash"; the Delete button's tooltip states deletions move to the trash (recoverable); a failed delete still surfaces an error toast (`_deleteBranches`)
+  - log: 2026-06-21 criterion added after the UX adversarial review flagged immediate delete had no recoverability cue or feedback
+- [x] **Accessibility** - each row checkbox has an `aria-label` ("Select <name>"); the list region is labelled "Conversations"; the select cell is a >=24px hit target that toggles the checkbox (WCAG 2.2); the delete status is announced via the polite live region
+  - log: 2026-06-21 criterion added after the UX adversarial review (unlabeled checkboxes, sub-24px target, no announcement)
+- [x] **Focus retained on delete** - after a delete the focused row is destroyed by re-render, so focus is moved to the select-all checkbox (a real control with a reliable keyboard ring), unless the user is still typing in the search box; keyboard focus stays inside the dialog
+  - log: 2026-06-21 criterion added after the UX adversarial review (focus dropped to body)
+  - log: 2026-06-21 target changed search -> select-all after the review (text-input refocus / unreliable :focus-visible on a scripted tabindex park)
+- [x] **In-flight lock** - while a delete is running the whole popup body is scrimmed (pointer-events none, dimmed) and the select-all, search and row-checkbox handlers no-op, so a slow backend cannot be double-clicked or re-ticked into a race; the button reads "Deleting..." with aria-busy on the list region; the lock always clears (terminal catch) so the button never sticks disabled; the Dialog Cancel button stays usable
+  - log: 2026-06-21 criterion added across the UX adversarial review rounds (double-click delete, mid-flight selection discard, stuck-disabled button)
+- [x] **Copy id** - every row, including the pinned current one, carries a copy button that copies that conversation's session id without selecting or switching
+  - log: 2026-06-21 implemented (see Copy Session ID)
+- [x] **Filter** - the search box filters by name or session id; select-all and delete act on the filtered set; an empty hint shows when nothing matches
+  - log: 2026-06-21 implemented (carried from the switch popup)
+- [x] **Edge: no other conversations** - only the pinned current row shows, with a "No other conversations." hint; nothing to select or delete
+  - log: 2026-06-21 implemented (carried from the switch popup)
+- [x] **Edge: delete leaves only current** - after deleting all others, the table shows just the pinned current row; the panel row count drops to the plain name
+  - log: 2026-06-21 implemented (carried from the switch popup)
+- [x] **Edge: delete fails** - a failed delete notifies via an error toast; the list resyncs from the server (`_deleteBranches` always `_fetch`es in `finally`)
+  - log: 2026-06-21 implemented (carried from the switch popup)
+- [x] **Edge: delete already-removed branch** - file gone before delete -> treated as deleted, no error, list refreshes
+  - log: 2026-06-12 implemented (v1.2.7), carried into the redesign
 
 ## Copy Session ID
 

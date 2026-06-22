@@ -4,6 +4,17 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.25] - 2026-06-22
+
+### Changed
+
+- The "Manage Sessions" popup is now a scrollable table with the current conversation pinned at the top and clearly accented (brand-coloured left bar and a bold "CURRENT" chip) instead of being dimmed
+- Deleting sessions in the "Manage Sessions" popup is now a single click that moves them to trash and reports "N moved to trash" - no confirmation dialog; confirmation is kept only for project-level "Remove from Claude" and "Clean Up Parallel Sessions"
+
+### Fixed
+
+- The popup's delete no longer opens a second dialog that rendered detached from the popup; deletion now reads back the conversation list from disk so the table stays accurate
+
 ## [1.2.24] - 2026-06-21
 
 ### Changed

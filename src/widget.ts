@@ -1496,6 +1496,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
     // Local working copy so deletions can refresh the list in place.
     let items = [...branches];
     const selected = new Set<string>();
+    let deleting = false; // guards the async delete against double-invocation
 
     const body = document.createElement('div');
     body.className = 'jp-ClaudeSessionsPanel-branchPopup';
@@ -1506,28 +1507,53 @@ export class ClaudeCodeSessionsWidget extends Widget {
     search.className = 'jp-ClaudeSessionsPanel-branchSearch';
     body.appendChild(search);
 
+    // Table header strip: select-all on the left, conversation count right.
+    const header = document.createElement('div');
+    header.className = 'jp-ClaudeSessionsPanel-branchHeader';
     const selectAllBar = document.createElement('label');
     selectAllBar.className = 'jp-ClaudeSessionsPanel-branchSelectAll';
     const selectAll = document.createElement('input');
     selectAll.type = 'checkbox';
     selectAllBar.appendChild(selectAll);
     selectAllBar.appendChild(document.createTextNode('Select all'));
-    body.appendChild(selectAllBar);
+    header.appendChild(selectAllBar);
+    const countEl = document.createElement('span');
+    countEl.className = 'jp-ClaudeSessionsPanel-branchHeaderCount';
+    header.appendChild(countEl);
+    body.appendChild(header);
 
     const list = document.createElement('div');
     list.className = 'jp-ClaudeSessionsPanel-branchList';
+    // role=group makes the aria-label apply to the conversation list region.
+    list.setAttribute('role', 'group');
+    list.setAttribute('aria-label', 'Conversations');
     body.appendChild(list);
 
     const footer = document.createElement('div');
     footer.className = 'jp-ClaudeSessionsPanel-branchFooter';
+    // Plain visual counter (selection or last action). The screen-reader
+    // announcement lives in a separate live region (srLive) so per-checkbox
+    // ticks are not announced on top of the native checkbox.
+    const selCount = document.createElement('span');
+    selCount.className = 'jp-ClaudeSessionsPanel-branchSelCount';
+    footer.appendChild(selCount);
     const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
     deleteBtn.className = 'jp-ClaudeSessionsPanel-branchDelete';
+    deleteBtn.title = 'Deleted conversations move to the trash (recoverable)';
     footer.appendChild(deleteBtn);
     body.appendChild(footer);
 
+    // Visually-hidden polite live region, announced only on delete.
+    const srLive = document.createElement('div');
+    srLive.className = 'jp-ClaudeSessionsPanel-srOnly';
+    srLive.setAttribute('role', 'status');
+    srLive.setAttribute('aria-live', 'polite');
+    body.appendChild(srLive);
+
     const bodyWidget = new Widget({ node: body });
     const dialog = new Dialog({
-      title: 'Switch and Manage Sessions',
+      title: 'Manage Sessions',
       body: bodyWidget,
       buttons: [Dialog.cancelButton()]
     });
@@ -1543,9 +1569,18 @@ export class ClaudeCodeSessionsWidget extends Widget {
     };
 
     const updateControls = () => {
-      deleteBtn.disabled = selected.size === 0;
-      deleteBtn.textContent = `Delete (${selected.size})`;
+      deleteBtn.disabled = deleting || selected.size === 0;
+      deleteBtn.textContent = deleting
+        ? 'Deleting...'
+        : `Delete (${selected.size})`;
+      selCount.textContent = selected.size ? `${selected.size} selected` : '';
+      selCount.classList.remove('jp-mod-deleted');
       const visible = visibleMatches();
+      const total = items.length + 1; // + the pinned current conversation
+      const shown = visible.length + 1; // the current row is always shown
+      countEl.textContent = search.value.trim()
+        ? `${shown} of ${total}`
+        : `${total} conversation${total === 1 ? '' : 's'}`;
       const visibleSelected = visible.filter(b =>
         selected.has(b.session_id)
       ).length;
@@ -1563,6 +1598,10 @@ export class ClaudeCodeSessionsWidget extends Widget {
       const currentRow = document.createElement('div');
       currentRow.className = 'jp-ClaudeSessionsPanel-branchRow jp-mod-current';
       currentRow.title = `Session id: ${current}`;
+      // Empty select cell keeps the name column aligned with branch rows.
+      const currentSelect = document.createElement('span');
+      currentSelect.className = 'jp-ClaudeSessionsPanel-branchSelectCell';
+      currentRow.appendChild(currentSelect);
       const currentLabel = document.createElement('span');
       currentLabel.className = 'jp-ClaudeSessionsPanel-branchLabel';
       const currentName = this._activeSession
@@ -1592,12 +1631,24 @@ export class ClaudeCodeSessionsWidget extends Widget {
         row.className = 'jp-ClaudeSessionsPanel-branchRow';
         row.title = `Session id: ${b.session_id}`;
 
+        const selectCell = document.createElement('span');
+        selectCell.className = 'jp-ClaudeSessionsPanel-branchSelectCell';
         const check = document.createElement('input');
         check.type = 'checkbox';
         check.checked = selected.has(b.session_id);
+        check.setAttribute(
+          'aria-label',
+          `Select ${this._branchDisplayName(b)}`
+        );
         // The checkbox is its own click zone - ticking must not switch.
         check.addEventListener('click', e => {
           e.stopPropagation();
+          if (deleting) {
+            // Keyboard Space isn't blocked by the busy scrim's pointer-events;
+            // re-sync the native toggle on the next render.
+            check.checked = selected.has(b.session_id);
+            return;
+          }
           if (check.checked) {
             selected.add(b.session_id);
           } else {
@@ -1605,7 +1656,16 @@ export class ClaudeCodeSessionsWidget extends Widget {
           }
           updateControls();
         });
-        row.appendChild(check);
+        selectCell.appendChild(check);
+        // The whole cell is a select target (>=24px), not just the checkbox;
+        // clicking the padding toggles via the checkbox's own handler.
+        selectCell.addEventListener('click', e => {
+          if (e.target !== check) {
+            e.stopPropagation();
+            check.click();
+          }
+        });
+        row.appendChild(selectCell);
 
         const label = document.createElement('span');
         label.className = 'jp-ClaudeSessionsPanel-branchLabel';
@@ -1640,6 +1700,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
     };
 
     selectAll.addEventListener('change', () => {
+      if (deleting) {
+        return;
+      }
       // Select-all acts on the visible (filtered) rows only.
       const visible = visibleMatches();
       if (selectAll.checked) {
@@ -1651,35 +1714,104 @@ export class ClaudeCodeSessionsWidget extends Widget {
       updateControls();
     });
 
+    // Busy-lock the whole body (button + list) during the async delete so a
+    // slow backend cannot be double-clicked into deleting the same set twice
+    // and a mid-flight selection cannot be silently discarded.
+    const setDeleting = (on: boolean) => {
+      deleting = on;
+      // Scrim the whole popup body (search, select-all, list) so nothing can
+      // be re-ticked or re-triggered mid-flight; the Dialog's Cancel button
+      // sits outside the body and stays usable. aria-busy goes on the live
+      // list region, not the (disabled, unannounced) button.
+      body.classList.toggle('jp-mod-busy', on);
+      if (on) {
+        list.setAttribute('aria-busy', 'true');
+      } else {
+        list.removeAttribute('aria-busy');
+      }
+    };
+
     deleteBtn.addEventListener('click', () => {
-      if (selected.size === 0) {
+      if (deleting || selected.size === 0) {
         return;
       }
-      const n = selected.size;
-      void showDialog({
-        title: 'Delete Sessions',
-        body:
-          `Delete ${n} session${n === 1 ? '' : 's'} from "${this._activeSession ? this._lookupName(this._activeSession) : ''}"? ` +
-          'They are moved to trash. This cannot be undone.',
-        buttons: [Dialog.cancelButton(), Dialog.warnButton({ label: 'Delete' })]
-      }).then(confirm => {
-        if (!confirm.button.accept) {
-          return;
-        }
-        void this._deleteBranches([...selected]).then(deleted => {
+      // No confirmation here: deletions move to trash (recoverable), and a
+      // second Lumino dialog stacked on this popup renders detached. The only
+      // confirmed destructive actions are Clean Up Parallel Sessions and
+      // Remove from Claude (whole-project / bulk). Feedback is given instead
+      // of a prompt: a live "N moved to trash" status (a failure still toasts
+      // via _deleteBranches).
+      setDeleting(true);
+      updateControls();
+      void this._deleteBranches([...selected])
+        .then(async deleted => {
           if (deleted === null) {
+            setDeleting(false);
+            updateControls(); // re-enable; selection unchanged
             return;
           }
-          items = items.filter(b => !selected.has(b.session_id));
+          // Re-sync from disk truth, not an optimistic splice: a branch the
+          // backend skipped (it became the resolved-current, or was already
+          // gone) must not vanish from the list while it still exists.
+          const session = this._activeSession;
+          try {
+            if (!session) {
+              throw new Error('no active session');
+            }
+            const fresh = await requestAPI<IBranchesResponse>(
+              `sessions/branches?encoded_path=${encodeURIComponent(session.encoded_path)}`,
+              this._serverSettings,
+              { cache: 'no-store' }
+            );
+            items = fresh.branches;
+          } catch {
+            // Refetch failed (rare): optimistic removal. The announced count
+            // may then differ from rows removed if the backend skipped one;
+            // the panel's own _fetch (in _deleteBranches) reconciles on disk.
+            items = items.filter(b => !selected.has(b.session_id));
+          }
+          // The user may have closed the popup during the refetch await - don't
+          // touch shared state or a detached DOM in that case.
+          if (!bodyWidget.isAttached) {
+            return;
+          }
+          setDeleting(false);
           selected.clear();
           this._lastBranches = items;
           render();
           updateControls();
+          // Feedback (no prompt): a perceivable counter + a polite SR
+          // announcement of the actual number the backend moved to trash.
+          const moved = `${deleted} moved to trash`;
+          selCount.textContent = moved;
+          selCount.classList.add('jp-mod-deleted');
+          // Clear then re-set on the next tick so an identical count (two
+          // single deletes in a row) is still re-announced by aria-live.
+          srLive.textContent = '';
+          window.setTimeout(() => {
+            srLive.textContent = moved;
+          }, 60);
+          // Keep focus inside the dialog (render() destroyed the focused row).
+          // Focus the select-all checkbox (a real control with a reliable
+          // keyboard ring), unless the user is still typing in the search box.
+          if (document.activeElement !== search) {
+            selectAll.focus();
+          }
+        })
+        .catch(() => {
+          // Defensive: never leave the button stuck disabled if the chain
+          // rejects unexpectedly.
+          if (bodyWidget.isAttached) {
+            setDeleting(false);
+            updateControls();
+          }
         });
-      });
     });
 
     search.addEventListener('input', () => {
+      if (deleting) {
+        return;
+      }
       render();
       updateControls();
     });

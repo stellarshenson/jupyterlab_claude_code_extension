@@ -240,15 +240,56 @@ describe('launch spinner dismiss contract', () => {
       );
     });
 
-    it('delete opens a confirmation dialog and only deletes on accept', () => {
+    it('delete removes selected sessions immediately, no confirmation dialog', () => {
       const popup = (widgetSrc.match(
         /private _showBranchPopup[\s\S]*?\n  \}/
       ) ?? [''])[0];
-      expect(popup).toMatch(/showDialog\(\{\s*title: 'Delete Sessions'/);
-      expect(popup).toMatch(/Dialog\.warnButton\(\{ label: 'Delete' \}\)/);
-      expect(popup).toMatch(
-        /if \(!confirm\.button\.accept\) \{\s*return;[\s\S]*?_deleteBranches/
+      // The per-row delete must NOT stack a second Lumino dialog on the popup
+      // (it renders detached) - confirmation is reserved for cleanup / remove.
+      expect(popup).not.toMatch(/title: 'Delete Sessions'/);
+      const delHandler = (popup.match(
+        /deleteBtn\.addEventListener\('click'[\s\S]*?\n    \}\);/
+      ) ?? [''])[0];
+      expect(delHandler).toMatch(/this\._deleteBranches\(\[\.\.\.selected\]\)/);
+      expect(delHandler).not.toMatch(/showDialog/);
+    });
+
+    it('manage sessions popup is a table with an accented pinned current row', () => {
+      const popup = (widgetSrc.match(
+        /private _showBranchPopup[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(popup).toMatch(/title: 'Manage Sessions'/);
+      expect(popup).toMatch(/branchHeader/);
+      expect(popup).toMatch(/branchHeaderCount/);
+      expect(popup).toMatch(/branchSelectCell/);
+      const css: string = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'style', 'base.css'),
+        'utf-8'
       );
+      const cur = (css.match(
+        /\.jp-ClaudeSessionsPanel-branchRow\.jp-mod-current \{[\s\S]*?\}/
+      ) ?? [''])[0];
+      expect(cur).toMatch(/position: sticky/);
+      expect(cur).toMatch(/border-left: 3px solid var\(--jp-brand-color1\)/);
+      const del = (css.match(
+        /\.jp-ClaudeSessionsPanel-branchDelete \{[\s\S]*?\}/
+      ) ?? [''])[0];
+      expect(del).toMatch(/--jp-error-color1/);
+    });
+
+    it('popup delete is accessible and gives feedback without a prompt', () => {
+      const popup = (widgetSrc.match(
+        /private _showBranchPopup[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      // per-checkbox accessible name + polite live region for the result
+      expect(popup).toMatch(/`Select \$\{this\._branchDisplayName/);
+      expect(popup).toMatch(/aria-live', 'polite'/);
+      // the delete handler announces "N moved to trash" and keeps focus
+      const delHandler = (popup.match(
+        /deleteBtn\.addEventListener\('click'[\s\S]*?\n    \}\);/
+      ) ?? [''])[0];
+      expect(delHandler).toMatch(/moved to trash/);
+      expect(delHandler).toMatch(/selectAll\.focus\(\)/);
     });
 
     it('delete posts to delete-branches and resyncs the panel', () => {
