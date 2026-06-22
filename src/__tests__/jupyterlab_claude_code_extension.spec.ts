@@ -220,6 +220,17 @@ describe('launch spinner dismiss contract', () => {
       expect(checkboxIdx).toBeGreaterThan(currentIdx);
     });
 
+    it('current row exposes aria-current and a plain lowercase "current" label', () => {
+      const popup = (widgetSrc.match(
+        /private _showBranchPopup[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      // Programmatic active state for assistive tech (visual cues are the
+      // brand left-bar, tint and the plain word) - UX review finding.
+      expect(popup).toMatch(/setAttribute\('aria-current', 'true'\)/);
+      // The marker is plain text "current" - the boxed uppercase chip is gone.
+      expect(popup).toMatch(/badge\.textContent = 'current'/);
+    });
+
     it('checkbox is its own click zone and selection gates row switch', () => {
       const popup = (widgetSrc.match(
         /private _showBranchPopup[\s\S]*?\n  \}/
@@ -508,10 +519,11 @@ describe('launch spinner dismiss contract', () => {
 
   /**
    * Contract for conversation-aware terminal reuse and the Open Branched
-   * Conversation feature. The reuse path must refuse to focus a terminal
-   * running a DIFFERENT known conversation (the switch-then-click bug), and
-   * opening a specific branch must launch its own terminal (strict) so
-   * several branches stay open independently.
+   * Conversation feature. Reuse must refuse to focus a terminal running a
+   * DIFFERENT or UNKNOWN conversation (the switch-then-click bug, DEF-4): a
+   * terminal is reused only on a POSITIVE conversation-id match. Every
+   * extension launch carries an explicit id so its terminal is identifiable
+   * (resume -> --resume, new session / fork -> --session-id).
    */
   describe('conversation-aware reuse + open-branch contract', () => {
     const findTerm = (widgetSrc.match(
@@ -526,6 +538,9 @@ describe('launch spinner dismiss contract', () => {
     const openBranch = (widgetSrc.match(
       /private async _openBranch[\s\S]*?\n  \}/
     ) ?? [''])[0];
+    const newSession = (widgetSrc.match(
+      /private async _newSession[\s\S]*?\n  \}/
+    ) ?? [''])[0];
     const watch = (widgetSrc.match(/private _watchForBranch[\s\S]*?\n  \}/) ?? [
       ''
     ])[0];
@@ -537,32 +552,32 @@ describe('launch spinner dismiss contract', () => {
       expect(iface).toMatch(/session_id\?: string \| null/);
     });
 
-    it('_findTerminalForCwd takes the wanted id and a strict flag', () => {
+    it('_findTerminalForCwd takes the wanted id with no strict flag', () => {
       expect(findTerm).toMatch(
-        /_findTerminalForCwd\(\s*projectPath: string,\s*wantedSessionId: string \| undefined,\s*strict: boolean/
+        /_findTerminalForCwd\(\s*projectPath: string,\s*wantedSessionId: string \| undefined\s*\)/
       );
     });
 
-    it('reuse rejects a terminal running a known different conversation', () => {
-      // Same conversation, or unknown (fresh) only in lenient mode, may reuse.
+    it('reuse requires a positive conversation-id match (no lenient unknown reuse)', () => {
       expect(findTerm).toMatch(/const runningId = data\.session_id \?\? null/);
+      // The ONLY reuse condition: a truthy wanted id equal to the observed
+      // id. A missing wanted id or an unknown (null) running id never matches,
+      // so a -c/--continue or bare-claude terminal is never reused (DEF-4).
       expect(findTerm).toMatch(
-        /sameConversation = runningId === wantedSessionId/
+        /if \(!wantedSessionId \|\| runningId !== wantedSessionId\) \{\s*continue;/
       );
-      expect(findTerm).toMatch(/unknownConversation = runningId === null/);
-      expect(findTerm).toMatch(
-        /if \(!\(sameConversation \|\| \(!strict && unknownConversation\)\)\) \{\s*continue;/
-      );
+      // The old lenient/strict machinery is gone.
+      expect(findTerm).not.toMatch(/unknownConversation/);
+      expect(findTerm).not.toMatch(/strict/);
     });
 
-    it('microcache reuse is gated on the conversation id', () => {
+    it('microcache reuse is gated purely on the conversation id', () => {
       expect(doResume).toMatch(/cached\.sessionId === session\.session_id/);
-      expect(doResume).toMatch(/!strict && unknownConversation/);
+      expect(doResume).not.toMatch(/unknownConversation/);
+      expect(doResume).not.toMatch(/strict/);
     });
 
-    it('microcache is tagged with the OBSERVED running id, not the wanted one', () => {
-      // Storing the wanted id would let a later strict reuse trust a
-      // fabricated tag and focus the wrong conversation (review finding 1).
+    it('microcache is tagged with the OBSERVED running id', () => {
       expect(doResume).toMatch(
         /widget: found\.widget,\s*sessionId: found\.runningId \?\? undefined/
       );
@@ -576,16 +591,19 @@ describe('launch spinner dismiss contract', () => {
       expect(resume).toMatch(/this\._pendingByPath\.(get|set)\(key/);
     });
 
-    it('_openBranch is strict for a different branch, lenient for the current', () => {
-      // Strict on a non-current branch lands the user in THAT conversation;
-      // lenient on the current avoids a `claude --resume` "already in use"
-      // collision with a fresh terminal already running it (review finding 2).
+    it('a new session launches with an explicit --session-id so it is identifiable', () => {
+      // DEF-4: a bare `claude` reports no id and would be wrongly reused;
+      // launching with a frontend id makes the terminal positively matchable.
+      expect(newSession).toMatch(/const newId = UUID\.uuid4\(\)/);
+      expect(newSession).toMatch(/new_session_id: newId/);
+      expect(newSession).toMatch(/sessionId: newId/);
+    });
+
+    it('_openBranch reuses only a terminal running that conversation', () => {
       expect(openBranch).toMatch(
-        /const strict = sessionId !== active\.session_id/
+        /this\._resumeInTerminal\(\{ \.\.\.active, session_id: sessionId \}\)/
       );
-      expect(openBranch).toMatch(
-        /this\._resumeInTerminal\(\s*\{ \.\.\.active, session_id: sessionId \},\s*false,\s*strict\s*\)/
-      );
+      expect(openBranch).not.toMatch(/strict/);
     });
 
     it('open-branch command and submenu are wired up', () => {

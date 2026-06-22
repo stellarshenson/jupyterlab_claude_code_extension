@@ -551,8 +551,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
   private async _resumeInTerminal(
     session: ISession,
-    forceDangerous: boolean = false,
-    strict: boolean = false
+    forceDangerous: boolean = false
   ): Promise<void> {
     // Coalesce concurrent clicks on the SAME conversation - subsequent clicks
     // attach to the in-flight promise instead of creating their own terminal.
@@ -563,36 +562,32 @@ export class ClaudeCodeSessionsWidget extends Widget {
     if (inFlight) {
       return inFlight;
     }
-    const promise = this._doResumeInTerminal(
-      session,
-      forceDangerous,
-      strict
-    ).finally(() => {
-      this._pendingByPath.delete(key);
-    });
+    const promise = this._doResumeInTerminal(session, forceDangerous).finally(
+      () => {
+        this._pendingByPath.delete(key);
+      }
+    );
     this._pendingByPath.set(key, promise);
     return promise;
   }
 
   /**
-   * Reuse an open terminal only when it is running the conversation the
-   * caller wants; otherwise launch a fresh ``claude --resume <id>``.
+   * Reuse an open terminal only when it is POSITIVELY running the
+   * conversation the caller wants (its claude argv carries the same
+   * ``--resume``/``--session-id``); otherwise launch a fresh ``claude
+   * --resume <id>``.
    *
-   * ``strict`` selects how a cwd-matching claude terminal whose conversation
-   * is UNKNOWN (started fresh, no ``--resume`` in its argv) is treated:
-   * - lenient (row resume): reuse it. A fresh session's id is not in its
-   *   argv, so this is the only way to refocus a just-started session, and
-   *   it avoids ``claude --resume`` erroring with "already in use".
-   * - strict (Open Branched Conversation): never reuse an unknown terminal -
-   *   the user picked a specific branch and must land in THAT conversation,
-   *   so a fresh/foreign terminal is left alone and a new one is launched.
-   * A terminal whose resume id is KNOWN and differs is never reused in
-   * either mode - that is the switch-then-click bug this fixes.
+   * A cwd-matching terminal whose conversation is UNKNOWN (claude started
+   * with ``-c``/``--continue`` or a bare ``claude``, so no id is in its argv)
+   * is never reused - it may be running a different conversation of this
+   * project, which is the switch-then-click bug. Every terminal the extension
+   * launches carries an explicit id (``--resume`` for a resume,
+   * ``--session-id`` for a new session or a fork), so an unknown terminal is
+   * necessarily one the extension did not start.
    */
   private async _doResumeInTerminal(
     session: ISession,
-    forceDangerous: boolean,
-    strict: boolean
+    forceDangerous: boolean
   ): Promise<void> {
     try {
       // Always prefer reusing an open terminal for this conversation. The
@@ -602,30 +597,29 @@ export class ClaudeCodeSessionsWidget extends Widget {
       // first - we won't auto-close, won't silently reuse the wrong mode.
 
       // 1. In-memory microcache (most-recent terminal for this project).
+      // Reuse it only when it is running the wanted conversation.
       const cached = this._terminalsByPath.get(session.project_path);
-      if (cached && !cached.widget.isDisposed) {
-        const sameConversation = cached.sessionId === session.session_id;
-        const unknownConversation = !cached.sessionId;
-        if (sameConversation || (!strict && unknownConversation)) {
-          if (forceDangerous) {
-            await this._showCloseExistingDialog();
-          }
-          this._focusTerminal(cached.widget);
-          return;
+      if (
+        cached &&
+        !cached.widget.isDisposed &&
+        cached.sessionId === session.session_id
+      ) {
+        if (forceDangerous) {
+          await this._showCloseExistingDialog();
         }
+        this._focusTerminal(cached.widget);
+        return;
       }
 
       // 2. Walk every live terminal widget JL knows about.
       const found = await this._findTerminalForCwd(
         session.project_path,
-        session.session_id,
-        strict
+        session.session_id
       );
       if (found) {
-        // Tag the cache with the OBSERVED conversation (null when the reused
-        // terminal is a fresh no-resume one), not the wanted id - otherwise a
-        // later strict reuse would trust a fabricated tag and focus the wrong
-        // conversation.
+        // Tag the cache with the OBSERVED conversation - here it equals the
+        // wanted id (the gate in _findTerminalForCwd), so a later reuse trusts
+        // a confirmed conversation rather than a wish.
         this._terminalsByPath.set(session.project_path, {
           widget: found.widget,
           sessionId: found.runningId ?? undefined
@@ -702,6 +696,11 @@ export class ClaudeCodeSessionsWidget extends Widget {
     if (!projectPath) {
       return;
     }
+    // Launch with a frontend-chosen session id (claude --session-id <uuid>
+    // starts a fresh session with that id) so the terminal's claude is
+    // identifiable from its argv. Reuse can then refocus this exact
+    // conversation later instead of guessing from an unknown terminal.
+    const newId = UUID.uuid4();
     const spinner = this._showLaunchSpinner();
     try {
       const launched = await requestAPI<ILaunchTerminalResponse>(
@@ -711,6 +710,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
           method: 'POST',
           body: JSON.stringify({
             project_path: projectPath,
+            new_session_id: newId,
             dangerously_skip_permissions:
               forceDangerous || this._dangerouslySkip
           })
@@ -720,11 +720,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
         name: launched.terminal_name
       });
       if (widget?.id) {
-        // A fresh session's conversation id is not in its argv, so leave
-        // sessionId undefined - reuse treats it as the project's current.
         this._terminalsByPath.set(projectPath, {
           widget,
-          sessionId: undefined
+          sessionId: newId
         });
         this._wireTerminalDisposal(projectPath, widget);
         this._focusTerminal(widget);
@@ -765,8 +763,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
   private async _findTerminalForCwd(
     projectPath: string,
-    wantedSessionId: string | undefined,
-    strict: boolean
+    wantedSessionId: string | undefined
   ): Promise<{ widget: any; runningId: string | null } | null> {
     if (!this._terminalTracker) {
       return null;
@@ -794,24 +791,25 @@ export class ClaudeCodeSessionsWidget extends Widget {
         if (!data?.has_claude) {
           continue;
         }
-        // Conversation gate: reuse only a terminal running the wanted
-        // conversation. A known, different resume id is never reused (the
-        // switch-then-click bug). An unknown id (fresh session, no --resume)
-        // is reused in lenient mode but skipped in strict mode, where the
-        // user picked a specific branch to open.
+        // Conversation gate: reuse ONLY a terminal we can positively confirm
+        // is running the wanted conversation. A terminal whose conversation
+        // is unknown (claude started with -c/--continue or a bare claude, so
+        // its argv carries no id) is never reused - it may be running a
+        // different conversation of this project (the switch-then-click bug).
+        // Extension launches always carry an explicit id, so an unknown
+        // terminal is necessarily foreign.
         const runningId = data.session_id ?? null;
-        const sameConversation = runningId === wantedSessionId;
-        const unknownConversation = runningId === null;
-        if (!(sameConversation || (!strict && unknownConversation))) {
+        // A missing wanted id (undefined) or an unknown running id (null) can
+        // never be a positive match - guard so neither side's "absent" value
+        // is mistaken for equality and an unknown terminal slips through.
+        if (!wantedSessionId || runningId !== wantedSessionId) {
           continue;
         }
         const cwds = Array.isArray(data?.cwds) ? data.cwds : [];
         for (const cwd of cwds) {
           if ((cwd || '').replace(/\/+$/, '') === target) {
-            // Return the OBSERVED running id (may be null for a fresh
-            // terminal), never the wanted id - the caller tags its cache
-            // with this so a later strict reuse trusts the process, not a
-            // wish.
+            // runningId equals the wanted id here (gated above), so the caller
+            // tags its cache with a confirmed conversation id.
             return { widget, runningId };
           }
         }
@@ -1671,9 +1669,10 @@ export class ClaudeCodeSessionsWidget extends Widget {
       buttons: [Dialog.cancelButton()]
     });
 
-    // Per-row "Open" launches that conversation in its own terminal (strict
-    // reuse via _openBranch) and closes the popup. stopPropagation keeps the
-    // click from toggling selection or switching the row.
+    // Per-row "Open" launches that conversation in its own terminal (via
+    // _openBranch, reusing only a terminal already running it) and closes the
+    // popup. stopPropagation keeps the click from toggling selection or
+    // switching the row.
     const openButton = (sessionId: string): HTMLButtonElement => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -1728,6 +1727,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
       const currentRow = document.createElement('div');
       currentRow.className = 'jp-ClaudeSessionsPanel-branchRow jp-mod-current';
       currentRow.title = `Session id: ${current}`;
+      // Expose the active state to assistive tech - the brand left-bar, tint
+      // and the plain "current" text are visual-only cues.
+      currentRow.setAttribute('aria-current', 'true');
       // Empty select cell keeps the name column aligned with branch rows.
       const currentSelect = document.createElement('span');
       currentSelect.className = 'jp-ClaudeSessionsPanel-branchSelectCell';
@@ -2101,27 +2103,18 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
   /** Open a specific conversation branch in its own terminal.
    *
-   * Strict reuse: only a terminal already running THIS conversation is
-   * refocused; otherwise a fresh ``claude --resume <id>`` is launched. So
-   * several branches of one project can be open independently and side by
-   * side - opening branch B never disturbs branch A's terminal. Honours the
-   * global skip-permissions toggle like a normal resume. */
+   * Reuse only a terminal already running THIS conversation; otherwise launch
+   * a fresh ``claude --resume <id>``. So several branches of one project can
+   * be open independently and side by side - opening branch B never disturbs
+   * branch A's terminal, and never refocuses a terminal running a different
+   * conversation. Honours the global skip-permissions toggle like a normal
+   * resume. */
   private async _openBranch(sessionId: string): Promise<void> {
     const active = this._activeSession;
     if (!active || !sessionId) {
       return;
     }
-    // Opening the row's CURRENT conversation behaves like a normal row resume
-    // (lenient): a fresh terminal already running it is reused, avoiding a
-    // `claude --resume` "already in use" collision. Opening a DIFFERENT branch
-    // is strict so the user lands in that specific conversation, even if some
-    // other (fresh) terminal sits at the same cwd.
-    const strict = sessionId !== active.session_id;
-    await this._resumeInTerminal(
-      { ...active, session_id: sessionId },
-      false,
-      strict
-    );
+    await this._resumeInTerminal({ ...active, session_id: sessionId });
   }
 
   /** Poll fast for a freshly forked branch to materialise, then refresh.

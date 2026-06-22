@@ -18,6 +18,10 @@ PROJECTS_DIRNAME = "projects"
 SESSIONS_DIRNAME = "sessions"
 INDEX_FILENAME = "sessions-index.json"
 FAVOURITES_FILENAME = "jupyterlab_claude_code_extension.json"
+# Sidecar in a project dir holding the session id a "switch" pinned as the
+# project's current conversation. A dotfile so claude's own ``*.jsonl`` glob
+# ignores it. See ``switch_branch`` / ``_resolve_latest``.
+CURRENT_PIN_FILENAME = ".jl-current"
 
 
 def claude_dir() -> Path:
@@ -146,6 +150,66 @@ def _jsonl_cwd(jsonl: Path) -> str | None:
     return _scan_jsonl_for_latest_cwd(jsonl) or _scan_jsonl_for_cwd(jsonl)
 
 
+def _read_current_pin(project_dir: Path) -> str | None:
+    """The session id a ``switch`` pinned as this project's current, or None.
+
+    Stored in the ``.jl-current`` sidecar (one session id, no extension).
+    Returns None when absent, empty, or malformed.
+    """
+    try:
+        sid = (project_dir / CURRENT_PIN_FILENAME).read_text(
+            encoding="utf-8"
+        ).strip()
+    except (OSError, ValueError):
+        # OSError: missing file / unreadable. ValueError covers
+        # UnicodeDecodeError - a corrupt or non-UTF-8 pin must be ignored, not
+        # crash resolution; a NUL in the path would raise here too.
+        return None
+    # Session ids are UUID-shaped (hex + hyphen). Restrict to that charset so a
+    # tampered/corrupt pin (slash, control bytes, "."/"..") cannot reach a path
+    # join; combined with the decode guard above, an invalid pin is ignored and
+    # recency resumes.
+    if not sid or not all(c.isalnum() or c == "-" for c in sid):
+        return None
+    return sid
+
+
+def _write_current_pin(project_dir: Path, session_id: str) -> None:
+    """Pin ``session_id`` as the project's current conversation.
+
+    Best-effort: a write failure just leaves resolution to fall back to
+    recency (see ``_read_current_pin`` / ``_resolve_latest``).
+    """
+    try:
+        (project_dir / CURRENT_PIN_FILENAME).write_text(
+            session_id, encoding="utf-8"
+        )
+    except OSError:
+        pass
+
+
+def clear_current_pin(claude_root: Path, project_path: str) -> None:
+    """Drop any switch pin for a project so recency resumes.
+
+    Called when a new session is started: the new session supersedes a prior
+    switch, and it naturally becomes the row's current by recency once its
+    JSONL lands (it is the newest file). Clearing the pin - rather than pinning
+    the not-yet-existent new id - avoids leaving a permanently dangling pin if
+    the user abandons the session before it writes its first turn, and never
+    feeds the new id through the pin file. Best-effort: a missing pin, missing
+    dir, or odd path leaves nothing to clear.
+    """
+    try:
+        (
+            claude_root
+            / PROJECTS_DIRNAME
+            / _encode_path(project_path)
+            / CURRENT_PIN_FILENAME
+        ).unlink()
+    except (OSError, ValueError):
+        pass
+
+
 def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
     """Pick the representative session for a project dir, trusting the filesystem.
 
@@ -172,12 +236,29 @@ def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
 
     chosen: Path | None = None
     chosen_cwd: str | None = None
-    for jsonl in jsonls:
-        cwd = _jsonl_cwd(jsonl)
-        project_path = _project_path_for_cwd(cwd, dirname) if cwd else None
-        if project_path:
-            chosen, chosen_cwd = jsonl, project_path
-            break
+
+    # A "switch" pins the project's current conversation durably (see
+    # ``switch_branch``). Honour the pin over recency so continuing to work in
+    # another conversation does not silently drag the row back to it. The pin
+    # wins only when its JSONL still exists and its recorded cwd is consistent
+    # with this project dir; a dangling or cwd-foreign pin is ignored and the
+    # recency scan below resumes.
+    pinned = _read_current_pin(project_dir)
+    if pinned:
+        pin_jsonl = project_dir / f"{pinned}.jsonl"
+        if pin_jsonl.is_file():
+            cwd = _jsonl_cwd(pin_jsonl)
+            project_path = _project_path_for_cwd(cwd, dirname) if cwd else None
+            if project_path:
+                chosen, chosen_cwd = pin_jsonl, project_path
+
+    if chosen is None:
+        for jsonl in jsonls:
+            cwd = _jsonl_cwd(jsonl)
+            project_path = _project_path_for_cwd(cwd, dirname) if cwd else None
+            if project_path:
+                chosen, chosen_cwd = jsonl, project_path
+                break
     if chosen is None:
         # No JSONL records a cwd that encodes to this directory name. That
         # happens when the user renamed both a project folder on disk AND
@@ -697,12 +778,15 @@ def list_branches(claude_root: Path, encoded_path: str) -> dict | None:
 def switch_branch(claude_root: Path, encoded_path: str, session_id: str) -> dict | None:
     """Make ``session_id`` the project's current conversation.
 
-    Persists by touching the JSONL's mtime so the existing recency
-    resolution (``_resolve_latest``), parallel-session cleanup, and claude's
-    own ``--resume`` picker all agree without extra state. Returns
+    Persists by writing a durable per-project pin (``.jl-current``) that
+    ``_resolve_latest`` honours over recency, and by touching the JSONL's
+    mtime so claude's own ``--resume`` picker stays roughly aligned. The pin
+    makes the choice stick even after later activity in another conversation
+    bumps its mtime higher (the recency-revert defect). Returns
     ``{"requested", "current"}`` where ``current`` is re-resolved after the
-    touch - it differs from ``requested`` when the branch's recorded cwd is
-    inconsistent with the project dir (such a branch cannot become current).
+    write - it differs from ``requested`` when the branch's recorded cwd is
+    inconsistent with the project dir (such a branch cannot become current,
+    and a cwd-foreign pin is ignored).
     Returns ``{"error": "branch_not_found"}`` when the JSONL is gone (e.g.
     removed between menu display and click) and None on invalid input.
     """
@@ -719,7 +803,16 @@ def switch_branch(claude_root: Path, encoded_path: str, session_id: str) -> dict
     jsonl = project_dir / f"{session_id}.jsonl"
     if not jsonl.is_file():
         return {"error": "branch_not_found"}
+    # Touch mtime so claude's own ``--resume`` picker stays roughly aligned,
+    # and write a durable pin so our resolution sticks even after subsequent
+    # activity in another conversation bumps its mtime higher. Pin only when
+    # the branch can actually become current - a cwd-foreign branch cannot
+    # (``_resolve_latest`` would ignore the pin), so writing it would just
+    # clobber a prior valid pin and silently fall back to recency.
     os.utime(jsonl, None)
+    cwd = _jsonl_cwd(jsonl)
+    if cwd and _project_path_for_cwd(cwd, project_dir.name):
+        _write_current_pin(project_dir, session_id)
     index_path = project_dir / INDEX_FILENAME
     index = _load_json(index_path) if index_path.is_file() else None
     latest = _resolve_latest(project_dir, index)

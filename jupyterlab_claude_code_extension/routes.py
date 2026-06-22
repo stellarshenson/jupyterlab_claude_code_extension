@@ -447,7 +447,11 @@ class LaunchClaudeTerminalHandler(APIHandler):
     """Spawn a JL terminal whose pty's only process is ``claude``.
 
     With ``session_id`` in the body the session is resumed (``claude
-    --resume <id>``); without it a brand-new claude session starts.
+    --resume <id>``). With ``new_session_id`` (and no ``session_id``) a
+    brand-new session starts under that caller-chosen id (``claude
+    --session-id <uuid>``) - so the launched terminal is identifiable from its
+    argv and reuse can refocus it later. With neither, a bare ``claude``
+    starts an unnamed fresh session.
 
     Bypasses ``terminal:create-new`` (which spawns the user's $SHELL) so the
     terminal tab shows claude immediately without any visible bash. Uses
@@ -468,6 +472,7 @@ class LaunchClaudeTerminalHandler(APIHandler):
             return
         project_path = body.get("project_path")
         session_id = body.get("session_id")
+        new_session_id = body.get("new_session_id")
         fork_session_id = body.get("fork_session_id")
         name = body.get("name")
         dangerously_skip = bool(body.get("dangerously_skip_permissions"))
@@ -482,6 +487,20 @@ class LaunchClaudeTerminalHandler(APIHandler):
         ):
             self.set_status(400)
             self.finish(json.dumps({"error": "invalid_session_id"}))
+            return
+        # ``new_session_id`` starts a BRAND-NEW session with a caller-chosen id
+        # (claude --session-id <uuid>), so the launched terminal is
+        # identifiable from its argv. Mutually exclusive with ``session_id``,
+        # which resumes an existing conversation.
+        if new_session_id is not None and (
+            not isinstance(new_session_id, str)
+            or not new_session_id
+            or "/" in new_session_id
+            or session_id is not None
+            or fork_session_id is not None
+        ):
+            self.set_status(400)
+            self.finish(json.dumps({"error": "invalid_new_session_id"}))
             return
         # ``fork_session_id`` branches the resumed conversation into a new
         # session id chosen by the caller (claude --fork-session
@@ -516,7 +535,12 @@ class LaunchClaudeTerminalHandler(APIHandler):
             self.set_status(503)
             self.finish(json.dumps({"error": "terminal_service_unavailable"}))
             return
-        argv = [claude, "--resume", session_id] if session_id else [claude]
+        if session_id:
+            argv = [claude, "--resume", session_id]
+        elif new_session_id:
+            argv = [claude, "--session-id", new_session_id]
+        else:
+            argv = [claude]
         if fork_session_id:
             argv += ["--fork-session", "--session-id", fork_session_id]
         if dangerously_skip:
@@ -537,6 +561,11 @@ class LaunchClaudeTerminalHandler(APIHandler):
             self.set_status(500)
             self.finish(json.dumps({"error": "terminal_create_failed"}))
             return
+        # A new session supersedes a prior switch: clear the project's pin so
+        # recency resumes and the new conversation (newest on disk once it
+        # writes) becomes current, instead of staying behind a pinned branch.
+        if new_session_id:
+            sessions_mod.clear_current_pin(sessions_mod.claude_dir(), project_path)
         self.finish(json.dumps({"terminal_name": name}))
 
 

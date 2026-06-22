@@ -134,7 +134,7 @@ Context-menu action forks the row's current conversation into a new named sessio
 
 ## Branch Switching
 
-Context-menu submenu switches a project's current conversation to another branch (parallel session JSONL). Persistence = touch selected JSONL mtime; recency resolution, cleanup and `claude --resume` picker all agree, no extra state.
+Context-menu submenu switches a project's current conversation to another branch (parallel session JSONL). Persistence = a durable per-project pin (`.jl-current` sidecar) that `_resolve_latest` honours over recency, plus an mtime touch so claude's own `--resume` picker stays roughly aligned; listing and cleanup read through `_resolve_latest`.
 
 - [x] **Submenu** - row with >1 conversation JSONL shows "Switch and Manage Sessions (N)" in context menu, N = count of other conversations; hidden when the project has a single session
   - log: 2026-06-12 implemented as "Switch Conversation Branch" (v1.2.2)
@@ -154,6 +154,14 @@ Context-menu submenu switches a project's current conversation to another branch
   - log: 2026-06-12 implemented (v1.2.2)
 - [x] **Switch** - selected JSONL becomes current; row session id / name / summary / recency update on refresh; click-to-resume opens it
   - log: 2026-06-12 implemented (v1.2.2)
+- [x] **Sticky switch** - the switched conversation stays the row's current across refreshes and across continued activity in another conversation, until the user switches again; persisted as the `.jl-current` pin and honoured over recency by `_resolve_latest`
+  - log: 2026-06-22 criterion added for DEF-5; pin implemented, pytest green; live-verified against the restarted server (pin held when another conversation's mtime was bumped newer)
+- [x] **Edge: activity in another conversation after a switch** - working in conversation A after switching to B does NOT drag the row back to A; the durable pin holds B (the recency-revert defect)
+  - log: 2026-06-22 criterion added; see [defects-branch-session.md](defects-branch-session.md) DEF-5
+- [x] **Edge: pinned conversation deleted** - a dangling pin (its JSONL gone) is ignored and recency resumes
+  - log: 2026-06-22 criterion added; pytest green
+- [x] **Edge: new session resets the pin** - starting a New Session in a pinned project clears the pin (it does not write the not-yet-existent new id), so the new conversation becomes current by recency once its JSONL lands; abandoning it before its first turn falls back to the most-recent existing conversation, never a dangling pin
+  - log: 2026-06-22 criterion added after the DEF-4/DEF-5 adversarial review (rounds 2-3) flagged a new session sitting behind a stale pin; resolved by clearing rather than re-pinning, pytest green
 - [x] **Count** - row name shows the total conversation count, only when N > 1; tooltip gets `Conversations: N` line
   - log: 2026-06-12 implemented as `name (N)` bracket text (v1.2.2)
   - log: 2026-06-12 display changed to branch icon + count badge (see Branch Session), pending release
@@ -166,6 +174,7 @@ Context-menu submenu switches a project's current conversation to another branch
 - [x] **Edge: cwd-inconsistent branch** - cannot become current (`_resolve_latest` skips it); response reports resolved session, panel warns
   - log: 2026-06-12 implemented (v1.2.2)
   - log: 2026-06-12 semantics narrowed to genuinely foreign cwds - subdirectory cwds now consistent (see Subdir cwd)
+  - log: 2026-06-22 a cwd-foreign pin is likewise ignored by `_resolve_latest` (DEF-5), so a foreign branch never becomes current via the pin either
 - [x] **Subdir cwd** - branch whose recorded cwd is a subdirectory of the project path is legitimate and can become current; the row's project path stays the project root, not the subdirectory
   - log: 2026-06-12 criterion added after real-world failure (tail cwd in `experiments/grounding` subfolder blocked switch)
   - log: 2026-06-12 implemented via `_project_path_for_cwd`, pending release
@@ -195,7 +204,8 @@ The "Manage Sessions" popup (opened from the row context menu) is a scrollable t
   - log: 2026-06-21 criterion added - retitled from "Switch and Manage Sessions" (UX redesign)
 - [x] **Table layout** - a search box, a header strip (select-all on the left, conversation count on the right), then a bordered scrollable list with aligned columns: select cell, name + short id, last-activity time, copy button
   - log: 2026-06-21 criterion added; supersedes the flat popup list (UX redesign)
-- [x] **Current pinned + accented** - the current conversation is pinned at the top of the scroll area (`position: sticky`), accented with a `--jp-brand-color1` left bar, a `--jp-layout-color2` background and an uppercase brand "current" chip; its name reads at normal emphasis (not dimmed); it carries an empty select cell so the name column stays aligned, and it cannot be selected or deleted
+- [x] **Current pinned + accented** - the current conversation is pinned at the top of the scroll area (`position: sticky`), accented with a `--jp-brand-color1` left bar and a `--jp-layout-color2` background, and marked by plain secondary "current" text in the time column (matching the other rows' "Xh ago") plus `aria-current="true"` for assistive tech; its name reads at normal emphasis (not dimmed); it carries an empty select cell so the name column stays aligned, and it cannot be selected or deleted
+  - log: 2026-06-22 "current" demoted from an uppercase brand-bordered chip to plain secondary text (it over-shouted the name and Open action); added `aria-current`; survived a 2-round ux-designer adversarial review (SHIP)
   - log: 2026-06-21 criterion added - replaces the dimmed first-row badge that read as inactive (UX redesign)
 - [x] **Switch** - clicking a non-current row while nothing is selected switches to that conversation and closes the popup
   - log: 2026-06-21 implemented (carried from the switch popup)
@@ -243,35 +253,40 @@ A context submenu and a per-row popup action open any of a project's conversatio
   - log: 2026-06-22 criterion added, implemented pending release
 - [x] **Independent terminals** - opening branch B never disturbs branch A's terminal; multiple branches of one project can be open side by side
   - log: 2026-06-22 criterion added after user emphasised branches must open independently
-- [x] **Conversation-aware reuse** - a row click / branch open reuses an open terminal ONLY when it is already running that exact conversation; a terminal running a known different conversation is never reused
+- [x] **Conversation-aware reuse** - a row click / branch open reuses an open terminal ONLY when it is POSITIVELY running that exact conversation (its argv id matches); a terminal running a known-different OR unknown conversation is never reused
   - log: 2026-06-22 criterion added, implemented pending release
+  - log: 2026-06-22 strengthened for DEF-4: dropped the lenient "unknown-conversation" reuse entirely; reuse is now a single rule - `runningId === wantedSessionId`
 - [x] **Switch-then-click fixed** - after switching the row to a different branch, clicking the row opens a NEW terminal on the switched branch instead of focusing the pre-switch terminal still running the original conversation (the reported defect)
   - log: 2026-06-22 criterion added after the bug report; see [defects-branch-session.md](defects-branch-session.md) DEF-3
-- [x] **Strict vs lenient reuse** - row resume (current conversation) is lenient: a terminal whose conversation id is unknown (started without `--resume`) is reused, avoiding a `claude --resume` "already in use" error; Open Branched Conversation is strict: an unknown terminal is left alone and a new one launched, so the user lands in the specific branch
+  - log: 2026-06-22 DEF-3 reopened as DEF-4 - the lenient branch still reused an UNKNOWN-conversation terminal; the positive-match rule + identifiable launches close it
+- [x] **Every launch is identifiable** - every terminal the extension launches carries an explicit conversation id in its argv so reuse can match it: resume -> `--resume <id>`, fork -> `--session-id <fork>`, and New Session -> `--session-id <uuid>` (a fresh session with a frontend-chosen id); a terminal with no id is therefore necessarily one the extension did not start and is never reused
+  - log: 2026-06-22 criterion added for DEF-4; New Session launch gained `new_session_id`, jest + pytest green
+- [x] **Backend conversation id** - `terminal-cwd` reports the running claude's conversation id from its argv (`--session-id` for a fork or a new session, else `--resume`, else null for a claude started with `-c`/`--continue` or a bare `claude`)
   - log: 2026-06-22 criterion added, implemented pending release
-- [x] **Backend conversation id** - `terminal-cwd` reports the running claude's conversation id from its argv (`--session-id` for a fork, else `--resume`, else null for a fresh session)
-  - log: 2026-06-22 criterion added, implemented pending release
+  - log: 2026-06-22 clarified null case includes `-c`/`--continue` (the DEF-4 trigger)
 - [x] **Fast refresh after fork** - once a fork is requested, the panel watches for the new branch JSONL at a fast cadence (2 s, bounded to ~3 minutes) and refreshes the moment it appears, instead of waiting for the 30 s poll; it only refreshes after the branch genuinely exists on disk
   - log: 2026-06-22 criterion added after user asked for quick UI update on branch creation
 - [x] **Edge: same branch opened twice** - the second open focuses the existing terminal (exact-match reuse), not a duplicate
   - log: 2026-06-22 criterion added, implemented pending release
-- [ ] **Edge: open a branch that is live in a fresh (no-resume) terminal** - strict open spawns `claude --resume <id>`, which claude rejects as "already in use"; the error surfaces as a toast (rare; accepted over silently focusing the wrong conversation)
-  - log: 2026-06-22 criterion added; documented trade-off, not yet exercised by a test
-- [x] **Edge: non-linux / no /proc** - the running conversation id is unavailable, so reuse falls back to lenient cwd matching as before; the fix is a Linux `/proc` capability
+- [x] **Edge: switch away from a panel-started session, then click** - a New Session now launches `claude --session-id <uuid>`, so its terminal IS identifiable; after switching the row to another branch and clicking, the panel-started session's terminal is correctly skipped and the click lands on the wanted conversation (the DEF-4 blind spot, now closed for every extension-launched terminal)
+  - log: 2026-06-22 was a documented blind spot under the old lenient design (DEF-3 review finding 3); closed by DEF-4 - New Session is now identifiable
+- [ ] **Edge: open a conversation that an EXTERNAL claude already runs unidentified** - if a claude started outside the extension (`-c`/`--continue` or bare `claude`) is live at the cwd running the wanted conversation, the extension cannot confirm it and spawns its own `claude --resume <id>`, which claude rejects as "already in use"; the error surfaces as a toast (rare; the extension cannot adopt a terminal it did not start, and this is preferred over silently focusing the wrong conversation)
+  - log: 2026-06-22 criterion narrowed to EXTERNAL unidentified terminals only (extension launches are all identifiable now); documented trade-off, not exercised by a test
+- [x] **Edge: non-linux / no /proc** - the running conversation id is unavailable (always null), so no terminal is ever positively matched; every click launches a fresh `claude --resume <id>` rather than risk focusing the wrong conversation; the identification is a Linux `/proc` capability
   - log: 2026-06-22 criterion added, implemented pending release
-- [ ] **Edge: switch away from a fresh (no-resume) session, then click** - a panel-started new session has no `--resume` in its argv, so its conversation id is unknowable from `/proc`; lenient row reuse cannot tell it apart and may still refocus it after a switch; the fix fully covers every `--resume`-launched terminal (which is every resume/open the panel performs on an existing conversation), leaving only manually-fresh sessions as a narrowed blind spot
-  - log: 2026-06-22 criterion added; documented blind spot raised by the adversarial review (finding 3), accepted - a no-resume terminal's conversation cannot be identified
+  - log: 2026-06-22 reworked for DEF-4: with no lenient fallback, a null id simply never matches, so the panel launches a new terminal instead of reusing a cwd-match blindly
 
 ### Open Branched Conversation - Notes
 
-- Reuse is keyed two ways: the observed running id stored in the microcache (the OBSERVED id, never the wanted one, so a strict reuse trusts the process not a wish) and the `/proc` walk in `_findTerminalForCwd`
-- In-flight launches coalesce per CONVERSATION (project + session id), deliberately NOT per call-mode (strict / skip-permissions): for a given conversation the end state is one focused terminal regardless of mode, and de-coalescing would risk two concurrent `claude --resume <same id>` launches colliding with "already in use"
-- The adversarial review (Mode 1, two rounds) flagged storing the wanted id (fixed: store the observed id) and the strict "already in use" on the current row (fixed: opening the current conversation is lenient); round 2 confirmed both RESOLVED and returned SHIP; remaining low findings (lenient-on-current can focus an unrelated fresh terminal, coalescing mode, nested-claude BFS, watcher concurrency) are accepted with rationale here
+- Reuse is a single rule: refocus a terminal only when its observed conversation id (from `/proc` via `_findTerminalForCwd`, or the launch-time tag in the microcache) equals the wanted id; there is no lenient "unknown" reuse and no strict/lenient mode any more (DEF-4)
+- The microcache holds the most-recent terminal per project tagged with the id it was launched/observed running; it is a fast-path only - the authoritative check is the live `/proc` read in `_findTerminalForCwd`. If a user manually restarts claude inside a managed tab onto a different conversation, the microcache tag goes stale until the tab is re-observed (accepted LOW, DEF-4 review finding 6)
+- In-flight launches coalesce per CONVERSATION (project + session id), NOT per project: two fast clicks on different branches of one project launch independently rather than the second resolving onto the first's terminal
+- The DEF-4/DEF-5 adversarial review (Mode 1, four rounds) confirmed the backend parses `--session-id` (so every extension launch is identifiable), and led to hardening: a `!wantedSessionId` guard on the reuse gate, `new_session_id` rejected alongside `fork_session_id`, the `.jl-current` pin restricted to a UUID charset, the pin written only for a cwd-consistent branch, and a New Session clearing the pin (not re-pinning a not-yet-existent id) so a started-then-abandoned session never leaves a dangling pin
 
 ### Open Branched Conversation - API
 
-- `GET terminal-cwd/<name>` -> `{terminal_name, cwds: [...], has_claude, session_id}`; `session_id` is the running claude's conversation (null when none / fresh)
-- `POST launch-terminal` body `{project_path, session_id?, fork_session_id?, name?, dangerously_skip_permissions?}` -> `{terminal_name}`; open-branch sends `session_id` = the chosen branch
+- `GET terminal-cwd/<name>` -> `{terminal_name, cwds: [...], has_claude, session_id}`; `session_id` is the running claude's conversation from its argv (null for `-c`/`--continue` or a bare `claude`)
+- `POST launch-terminal` body `{project_path, session_id?, new_session_id?, fork_session_id?, name?, dangerously_skip_permissions?}` -> `{terminal_name}`; open-branch sends `session_id` = the chosen branch; a new session sends `new_session_id` (a fresh `claude --session-id <uuid>`, mutually exclusive with `session_id` and `fork_session_id`); 400 `invalid_new_session_id`
 
 ## Copy Session ID
 

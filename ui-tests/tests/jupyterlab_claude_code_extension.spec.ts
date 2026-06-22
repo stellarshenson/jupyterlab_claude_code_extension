@@ -6,6 +6,27 @@ import { expect, test } from '@jupyterlab/galata';
  */
 test.use({ autoGoto: false });
 
+/**
+ * Build-agnostic readiness check.
+ *
+ * Galata's default `waitForApplication` calls `isInSimpleMode()`, which waits
+ * on the status-bar single-document-mode toggle (`getByRole('switch', { name:
+ * 'Simple' })`). Some JupyterLab builds do not render that toggle, so the
+ * default check hangs and every test times out at `page.goto()`. Wait on the
+ * splash teardown plus the lab shell instead - present in every build - so the
+ * suite is robust to the toggle's absence.
+ */
+test.use({
+  waitForApplication: async ({ baseURL }, use) => {
+    void baseURL;
+    const waitIsReady = async (page: any): Promise<void> => {
+      await page.locator('#jupyterlab-splash').waitFor({ state: 'detached' });
+      await page.locator('.jp-LabShell').first().waitFor({ state: 'visible' });
+    };
+    await use(waitIsReady);
+  }
+});
+
 test('should emit an activation console message', async ({ page }) => {
   const logs: string[] = [];
 
@@ -72,8 +93,9 @@ test('new-session menu item opens a terminal in the current folder', async ({
     })
     .click();
 
-  // The launch flow shows a modal spinner, POSTs launch-terminal (no
-  // session_id -> new session), then attaches JL's terminal widget. The
+  // The launch flow shows a modal spinner, POSTs launch-terminal (a
+  // frontend new_session_id -> a fresh claude --session-id <uuid>), then
+  // attaches JL's terminal widget. The
   // pty runs the fake claude script directly - no shell prompt. xterm
   // paints to canvas so the script's output is not assertable via DOM
   // text; instead confirm the server now reports a live terminal session.
@@ -108,7 +130,7 @@ async function openBranchyMenu(page: any) {
   await expect(row).toBeVisible({ timeout: 15000 });
   await row.click({ button: 'right' });
   const menu = page.locator('.lm-Menu.jp-ClaudeSessionsContextMenu').first();
-  await expect(menu).toBeVisible();
+  await expect(menu).toBeVisible({ timeout: 15000 });
   return menu;
 }
 
@@ -154,12 +176,21 @@ test('Manage Sessions popup exposes a per-row Open button', async ({
     .locator('.lm-Menu-itemLabel', { hasText: 'Open Branched Conversation' })
     .hover();
   const submenu = page.locator('.lm-Menu').last();
+  // Wait for the submenu to open, then click its "Manage Sessions..."
+  // COMMAND item. The ``[data-type="command"]`` filter is essential -
+  // ``hasText: 'Manage Sessions'`` alone also matches the "Switch and Manage
+  // Sessions" submenu PARENT, which does not open the popup.
+  await expect(
+    submenu.locator('.lm-Menu-item[data-type="command"]').first()
+  ).toBeVisible({ timeout: 10000 });
   await submenu
-    .locator('.lm-Menu-itemLabel', { hasText: 'Manage Sessions' })
+    .locator('.lm-Menu-item[data-type="command"]', {
+      hasText: 'Manage Sessions'
+    })
     .click();
 
   const popup = page.locator('.jp-ClaudeSessionsPanel-branchPopup');
-  await expect(popup).toBeVisible({ timeout: 10000 });
+  await expect(popup).toBeVisible({ timeout: 15000 });
   // Every row (current + branches) carries an Open button.
   const openButtons = popup.locator('.jp-ClaudeSessionsPanel-branchOpen');
   await expect(openButtons.first()).toBeVisible();

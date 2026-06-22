@@ -382,6 +382,90 @@ def test_switch_branch_foreign_cwd_cannot_become_current(fake_claude: Path) -> N
     assert result["current"] != "sid-1"
 
 
+def test_switch_branch_writes_pin_sidecar(fake_claude: Path) -> None:
+    """A switch records the choice in a ``.jl-current`` sidecar (DEF-5)."""
+    d = _make_branch_project(fake_claude, 3)
+    sessions_mod.switch_branch(fake_claude, "-home-user-branchy", "sid-0")
+    assert (d / sessions_mod.CURRENT_PIN_FILENAME).read_text().strip() == "sid-0"
+
+
+def test_switch_branch_pin_survives_later_activity(fake_claude: Path) -> None:
+    """DEF-5: after switching to a branch, continuing to work in another
+    conversation (its JSONL mtime overtakes) must NOT drag the row's current
+    back - the durable pin holds the switched branch as current."""
+    d = _make_branch_project(fake_claude, 3)  # sid-2 newest
+    sessions_mod.switch_branch(fake_claude, "-home-user-branchy", "sid-0")
+    # Simulate engaging sid-2: its JSONL mtime jumps far above the others.
+    os.utime(d / "sid-2.jsonl", (9_999, 9_999))
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/branchy"]["session_id"] == "sid-0"
+
+
+def test_resolve_latest_ignores_dangling_pin(fake_claude: Path) -> None:
+    """A pin naming a deleted session is ignored - recency resumes."""
+    d = _make_branch_project(fake_claude, 3)  # sid-2 newest
+    sessions_mod._write_current_pin(d, "sid-gone")
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/branchy"]["session_id"] == "sid-2"
+
+
+def test_new_session_clears_prior_switch_pin(fake_claude: Path) -> None:
+    """Starting a new session clears a prior switch pin so the new
+    conversation (newest by recency) becomes current rather than staying
+    behind the switched-to branch (round-2 finding). Clearing avoids a
+    dangling pin if the new session is abandoned (round-3 finding)."""
+    d = _make_branch_project(fake_claude, 3)
+    sessions_mod.switch_branch(fake_claude, "-home-user-branchy", "sid-0")
+    assert (d / sessions_mod.CURRENT_PIN_FILENAME).exists()
+    sessions_mod.clear_current_pin(fake_claude, "/home/user/branchy")
+    assert not (d / sessions_mod.CURRENT_PIN_FILENAME).exists()
+    # The new conversation lands newest -> recency makes it current. (switch
+    # touched sid-0's mtime to wall-clock now, so new-9 must sit above that.)
+    nj = d / "new-9.jsonl"
+    nj.write_text('{"cwd": "/home/user/branchy"}\n')
+    newest = max(p.stat().st_mtime for p in d.glob("*.jsonl")) + 100
+    os.utime(nj, (newest, newest))
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/branchy"]["session_id"] == "new-9"
+
+
+def test_clear_current_pin_safe_when_absent(fake_claude: Path) -> None:
+    """Clearing is best-effort: no pin, or no project dir, is a silent no-op."""
+    _make_branch_project(fake_claude, 2)
+    sessions_mod.clear_current_pin(fake_claude, "/home/user/branchy")  # no pin yet
+    sessions_mod.clear_current_pin(fake_claude, "/home/user/brand-new")  # no dir
+
+
+def test_switch_foreign_cwd_does_not_clobber_valid_pin(fake_claude: Path) -> None:
+    """A failed switch to a cwd-foreign branch must NOT overwrite a prior
+    valid pin and silently revert resolution to recency."""
+    d = _make_branch_project(fake_claude, 3)
+    sessions_mod.switch_branch(fake_claude, "-home-user-branchy", "sid-0")
+    # sid-1 records a foreign cwd - it cannot become current.
+    (d / "sid-1.jsonl").write_text('{"cwd": "/somewhere/else"}\n')
+    result = sessions_mod.switch_branch(fake_claude, "-home-user-branchy", "sid-1")
+    assert result["current"] != "sid-1"
+    # The earlier valid pin (sid-0) survives; resolution still returns it.
+    assert (d / sessions_mod.CURRENT_PIN_FILENAME).read_text().strip() == "sid-0"
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/branchy"]["session_id"] == "sid-0"
+
+
+def test_read_current_pin_rejects_tampered_content(fake_claude: Path) -> None:
+    """A corrupt/tampered pin (NUL, slash, dots) is ignored, never raising."""
+    d = _make_branch_project(fake_claude, 2)
+    for bad in ("a/b", "..", "x\x00y", ""):
+        (d / sessions_mod.CURRENT_PIN_FILENAME).write_text(bad)
+        assert sessions_mod._read_current_pin(d) is None
+        # _resolve_latest must not raise on the tampered pin.
+        assert sessions_mod._resolve_latest(d, None) is not None
+    # Non-UTF-8 bytes must NOT crash the read (UnicodeDecodeError is a
+    # ValueError, not an OSError) - the pin is ignored and recency resumes.
+    (d / sessions_mod.CURRENT_PIN_FILENAME).write_bytes(b"\xff\xfe not utf8")
+    assert sessions_mod._read_current_pin(d) is None
+    assert sessions_mod._resolve_latest(d, None) is not None
+
+
 def test_removed_current_falls_back_to_next_most_recent(fake_claude: Path) -> None:
     """Edge: the current conversation's JSONL is removed externally - the
     next most recent one becomes current on the following listing."""
@@ -1042,6 +1126,57 @@ async def test_launch_terminal_fork_requires_session_id(
     jp_fetch, fake_terminal_manager, tmp_path
 ) -> None:
     body = json.dumps({"project_path": str(tmp_path), "fork_session_id": "fork-9"})
+    with pytest.raises(Exception) as exc:
+        await jp_fetch(
+            "jupyterlab-claude-code-extension", "launch-terminal",
+            method="POST", body=body,
+        )
+    assert "400" in str(exc.value)
+
+
+async def test_launch_terminal_new_session_id_builds_session_id_argv(
+    jp_fetch, fake_terminal_manager, tmp_path
+) -> None:
+    """A new session with a caller-chosen id launches ``claude --session-id
+    <uuid>`` (no --resume), so the terminal is identifiable from its argv."""
+    body = json.dumps({"project_path": str(tmp_path), "new_session_id": "new-7"})
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "launch-terminal",
+        method="POST", body=body,
+    )
+    assert response.code == 200
+    cmd = fake_terminal_manager.kwargs["shell_command"]
+    assert cmd[-2:] == ["--session-id", "new-7"]
+    assert "--resume" not in cmd
+
+
+async def test_launch_terminal_new_session_id_rejected_with_session_id(
+    jp_fetch, fake_terminal_manager, tmp_path
+) -> None:
+    """``new_session_id`` and ``session_id`` are mutually exclusive."""
+    body = json.dumps({
+        "project_path": str(tmp_path),
+        "session_id": "sid-1",
+        "new_session_id": "new-7",
+    })
+    with pytest.raises(Exception) as exc:
+        await jp_fetch(
+            "jupyterlab-claude-code-extension", "launch-terminal",
+            method="POST", body=body,
+        )
+    assert "400" in str(exc.value)
+
+
+async def test_launch_terminal_new_session_id_rejected_with_fork(
+    jp_fetch, fake_terminal_manager, tmp_path
+) -> None:
+    """``new_session_id`` with ``fork_session_id`` is rejected - it would
+    otherwise build a malformed argv with two --session-id flags."""
+    body = json.dumps({
+        "project_path": str(tmp_path),
+        "new_session_id": "new-7",
+        "fork_session_id": "fork-9",
+    })
     with pytest.raises(Exception) as exc:
         await jp_fetch(
             "jupyterlab-claude-code-extension", "launch-terminal",

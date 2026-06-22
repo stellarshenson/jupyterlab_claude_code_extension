@@ -4,6 +4,18 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.33] - 2026-06-22
+
+### Fixed
+
+- Clicking a session row you switched to another conversation now lands you in that conversation, instead of focusing an open terminal still running a different one - terminal reuse requires a positive conversation-id match and never reuses a terminal whose conversation it cannot identify (such as a claude started with `-c`/`--continue` or a bare `claude`)
+- Switching a conversation is now durable: the panel no longer reverts the row to the most-recently-active conversation after a refresh; the choice is held by a per-project pin, and starting a new session clears it
+
+### Changed
+
+- A new session now launches with an explicit session id (`claude --session-id <uuid>`), so its terminal is always identifiable when you click its row again
+- The "Manage Sessions" popup marks the current conversation with plain "current" text (previously a boxed uppercase chip that over-emphasised it) and now exposes `aria-current` for assistive tech
+
 ## [1.2.26] - 2026-06-22
 
 ### Added

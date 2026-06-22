@@ -522,14 +522,9 @@
 
 .jp-ClaudeSessionsPanel-branchCurrentBadge {
   flex: none;
-  padding: 0 6px;
-  border: 1px solid var(--jp-brand-color1);
-  border-radius: 8px;
-  color: var(--jp-brand-color1);
+  white-space: nowrap;
+  color: var(--jp-ui-font-color2);
   font-size: var(--jp-ui-font-size0);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
 .jp-ClaudeSessionsPanel-branchSelectAll {
