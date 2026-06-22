@@ -93,6 +93,64 @@ def _tree_has_claude(root_pid: int) -> bool:
     return False
 
 
+def _parse_resume_id(cmdline: bytes) -> str | None:
+    """The conversation id a claude cmdline is running, or None.
+
+    A forked launch is ``claude --resume <parent> --fork-session
+    --session-id <fork>`` - the running conversation is the FORK
+    (``--session-id``), not the parent. So ``--session-id`` wins over
+    ``--resume`` when both are present; otherwise ``--resume`` is used; a
+    cmdline with neither is a brand-new session (None). Both the
+    ``--flag <val>`` and ``--flag=<val>`` forms are handled. Kept pure
+    (takes bytes, not a pid) so it is unit-testable without a live process.
+    """
+    args = [p.decode("utf-8", "replace") for p in cmdline.split(b"\x00") if p]
+
+    def value_of(flag: str) -> str | None:
+        for i, arg in enumerate(args):
+            if arg == flag:
+                nxt = args[i + 1] if i + 1 < len(args) else ""
+                # A following token that is itself a flag means the value is
+                # missing/malformed - do not swallow it as the id.
+                return None if nxt.startswith("-") else (nxt or None)
+            if arg.startswith(flag + "="):
+                return arg[len(flag) + 1:] or None
+        return None
+
+    return value_of("--session-id") or value_of("--resume")
+
+
+def _resume_id_from_cmdline(pid: int) -> str | None:
+    """Session id the process at ``pid`` is resuming, read from /proc."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as fh:
+            return _parse_resume_id(fh.read())
+    except OSError:
+        return None
+
+
+def _claude_resume_id(root_pid: int) -> str | None:
+    """The conversation id the pty's claude is running, or None.
+
+    Walks the pty's process tree, finds the ``claude`` process and returns
+    its conversation id from argv - ``--session-id`` (a fork) or ``--resume``
+    (see ``_parse_resume_id``). None when no claude is found or it carries
+    neither flag (a fresh session launched without an explicit id). The
+    frontend uses this so terminal reuse can tell whether an open claude
+    terminal is running the SAME conversation the clicked row points at -
+    resuming a different branch must open a NEW terminal, not focus the old one.
+    """
+    queue: list[int] = [root_pid]
+    while queue:
+        pid = queue.pop(0)
+        if _process_comm(pid) == "claude":
+            resume_id = _resume_id_from_cmdline(pid)
+            if resume_id:
+                return resume_id
+        queue.extend(_process_children(pid))
+    return None
+
+
 def _terminal_cwds(root_pid: int) -> list[str]:
     """Walk the pty's process tree and return ALL distinct live cwds found.
 
@@ -373,10 +431,15 @@ class TerminalCwdHandler(APIHandler):
             return
         cwds = _terminal_cwds(ptyproc.pid)
         has_claude = _tree_has_claude(ptyproc.pid)
+        # The conversation id the running claude is resuming (None for a
+        # fresh, non-resumed session) so the frontend reuses a terminal only
+        # when it is running the SAME conversation as the clicked row.
+        session_id = _claude_resume_id(ptyproc.pid)
         self.finish(json.dumps({
             "terminal_name": terminal_name,
             "cwds": cwds,
             "has_claude": has_claude,
+            "session_id": session_id,
         }))
 
 

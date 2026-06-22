@@ -463,6 +463,25 @@
   color: var(--jp-ui-font-color1);
 }
 
+/* Per-row "Open" launches the conversation in its own terminal. Compact
+   brand-outlined button matching the popup design language (2px radius). */
+.jp-ClaudeSessionsPanel-branchOpen {
+  flex: none;
+  padding: 0 8px;
+  border: 1px solid var(--jp-brand-color1);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--jp-brand-color1);
+  font-size: var(--jp-ui-font-size0);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.jp-ClaudeSessionsPanel-branchOpen:hover {
+  background: var(--jp-brand-color1);
+  color: var(--jp-ui-inverse-font-color1);
+}
+
 .jp-ClaudeSessionsPanel-branchTime {
   flex: none;
   width: 4em;

@@ -1149,3 +1149,98 @@ async def test_delete_branches_endpoint_rejects_bad_body(
             method="POST", body=body,
         )
     assert "400" in str(exc.value)
+
+
+# --------------------------------------------------------------------------
+# _parse_resume_id / _claude_resume_id - the conversation a claude terminal is
+# running, so terminal reuse can tell a project's branches apart.
+# --------------------------------------------------------------------------
+
+
+def test_parse_resume_id_reads_resume_flag() -> None:
+    cmdline = b"claude\x00--resume\x00abc-123\x00"
+    assert routes_mod._parse_resume_id(cmdline) == "abc-123"
+
+
+def test_parse_resume_id_handles_equals_form() -> None:
+    cmdline = b"claude\x00--resume=def-456\x00"
+    assert routes_mod._parse_resume_id(cmdline) == "def-456"
+
+
+def test_parse_resume_id_none_for_fresh_session() -> None:
+    # A brand-new session is launched as plain ``claude`` (no --resume).
+    assert routes_mod._parse_resume_id(b"claude\x00") is None
+    assert routes_mod._parse_resume_id(b"claude\x00--resume\x00") is None
+
+
+def test_parse_resume_id_fork_prefers_session_id_over_resume() -> None:
+    # A fork is ``claude --resume <parent> --fork-session --session-id <fork>``;
+    # the running conversation is the FORK, not the parent.
+    cmdline = (
+        b"claude\x00--resume\x00parent-id\x00"
+        b"--fork-session\x00--session-id\x00fork-id\x00"
+    )
+    assert routes_mod._parse_resume_id(cmdline) == "fork-id"
+
+
+def test_parse_resume_id_ignores_unrelated_args() -> None:
+    cmdline = b"claude\x00--dangerously-skip-permissions\x00-n\x00My Name\x00"
+    assert routes_mod._parse_resume_id(cmdline) is None
+
+
+def test_parse_resume_id_does_not_swallow_a_following_flag() -> None:
+    # A malformed ``--session-id`` with no value must not grab the next flag
+    # as the id; it falls through to --resume.
+    cmdline = b"claude\x00--session-id\x00--resume\x00real-id\x00"
+    assert routes_mod._parse_resume_id(cmdline) == "real-id"
+    # And with nothing usable, None.
+    assert routes_mod._parse_resume_id(b"claude\x00--resume\x00--verbose\x00") is None
+
+
+def test_claude_resume_id_walks_tree_to_the_claude_process(monkeypatch) -> None:
+    # The pty root is a shell (init waiter); claude is a child. The walk must
+    # find the claude pid (comm == "claude") and return its resume id, skipping
+    # the shell. The /proc cmdline read is stubbed so this is deterministic.
+    monkeypatch.setattr(
+        routes_mod, "_process_children",
+        lambda pid: [4242] if pid == 1000 else [],
+    )
+    monkeypatch.setattr(
+        routes_mod, "_process_comm",
+        lambda pid: "claude" if pid == 4242 else "bash",
+    )
+    monkeypatch.setattr(
+        routes_mod, "_resume_id_from_cmdline",
+        lambda pid: "watched-id" if pid == 4242 else None,
+    )
+    assert routes_mod._claude_resume_id(1000) == "watched-id"
+
+
+def test_claude_resume_id_none_when_no_claude_in_tree(monkeypatch) -> None:
+    monkeypatch.setattr(routes_mod, "_process_children", lambda pid: [])
+    monkeypatch.setattr(routes_mod, "_process_comm", lambda pid: "bash")
+    assert routes_mod._claude_resume_id(1000) is None
+
+
+def test_resume_id_from_cmdline_reads_proc() -> None:
+    # Spawn a real long-lived process carrying --resume in its argv and read
+    # its id back from /proc. python3 -c ignores trailing args (so it stays
+    # alive); poll until the kernel has populated cmdline with the exec'd argv
+    # (it is briefly empty/stale right after fork).
+    import subprocess
+    import time
+
+    proc = subprocess.Popen(
+        ["python3", "-c", "import time; time.sleep(30)", "--resume", "watched-id"],
+    )
+    try:
+        got = None
+        for _ in range(100):  # up to ~1s
+            got = routes_mod._resume_id_from_cmdline(proc.pid)
+            if got is not None:
+                break
+            time.sleep(0.01)
+        assert got == "watched-id"
+    finally:
+        proc.kill()
+        proc.wait()

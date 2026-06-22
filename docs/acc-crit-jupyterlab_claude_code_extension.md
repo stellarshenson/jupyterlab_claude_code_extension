@@ -10,6 +10,7 @@ Acceptance criteria for the whole plugin - one section per feature or panel beha
 - [Branch Session](#branch-session)
 - [Branch Switching](#branch-switching)
 - [Sessions Management Screen](#sessions-management-screen)
+- [Open Branched Conversation](#open-branched-conversation)
 - [Copy Session ID](#copy-session-id)
 - [Statusline CLI](#statusline-cli)
 
@@ -112,7 +113,8 @@ Context-menu action forks the row's current conversation into a new named sessio
 - [x] **Branch badge** - rows with more than one conversation show a branch icon plus total count after the name (replaces the plain `(N)` bracket text)
   - log: 2026-06-12 criterion added
   - log: 2026-06-12 implemented, pending release
-- [x] **Edge: fork JSONL is lazy** - claude materialises `<forkId>.jsonl` only on the first user turn in the new session, not at launch; until then the panel cannot list the branch (it reads on-disk truth); the row shows the branch on the next poll after the file exists; no warning is shown for the gap
+- [x] **Edge: fork JSONL is lazy** - claude materialises `<forkId>.jsonl` only on the first user turn in the new session, not at launch; until then the panel cannot list the branch (it reads on-disk truth); a fast watcher polls for the file and refreshes the row the moment it appears (see Open Branched Conversation "Fast refresh after fork"), not on the slow poll; no warning is shown for the gap
+  - log: 2026-06-22 updated - fork now triggers a bounded fast watcher so the branch surfaces in seconds once it exists, instead of waiting for the 30 s poll
   - log: 2026-06-21 criterion added - DEF-2; confirmed empirically (file absent through 20 s idle; claude rejects a pre-seeded id with "Session ID ... is already in use", so the file cannot be created ahead of time)
   - log: 2026-06-21 implemented - false warning removed; gap documented as a claude limitation (wontfix-external), mitigated by the forced refresh re-poll
 - [x] **Edge: fork without session id** - backend rejects `fork_session_id` without `session_id` (400 `invalid_fork_session_id`)
@@ -226,6 +228,50 @@ The "Manage Sessions" popup (opened from the row context menu) is a scrollable t
   - log: 2026-06-21 implemented (carried from the switch popup)
 - [x] **Edge: delete already-removed branch** - file gone before delete -> treated as deleted, no error, list refreshes
   - log: 2026-06-12 implemented (v1.2.7), carried into the redesign
+- [x] **Open per row** - every row (current + branches) carries an "Open" button that launches that conversation in its own terminal and closes the popup; behaviour detailed in [Open Branched Conversation](#open-branched-conversation)
+  - log: 2026-06-22 criterion added, implemented pending release
+
+## Open Branched Conversation
+
+A context submenu and a per-row popup action open any of a project's conversations directly in its own terminal. Terminal reuse is conversation-aware - a click lands you in the clicked conversation, never a different one - and several branches can be open at once.
+
+- [x] **Open submenu** - the context menu offers an "Open Branched Conversation (N)" submenu (terminal icon) listing the 5 most recent branches; it coexists with the "Switch and Manage Sessions" submenu (open does not replace switch)
+  - log: 2026-06-22 criterion added, implemented pending release
+- [x] **Open launches directly** - picking a branch launches a terminal running `claude --resume <id>` at the project path (honouring the skip-permissions toggle); no switch step
+  - log: 2026-06-22 criterion added, implemented pending release
+- [x] **Manage entry** - the open submenu ends with "Manage Sessions..." so the full list (and per-row open) is reachable from it
+  - log: 2026-06-22 criterion added, implemented pending release
+- [x] **Independent terminals** - opening branch B never disturbs branch A's terminal; multiple branches of one project can be open side by side
+  - log: 2026-06-22 criterion added after user emphasised branches must open independently
+- [x] **Conversation-aware reuse** - a row click / branch open reuses an open terminal ONLY when it is already running that exact conversation; a terminal running a known different conversation is never reused
+  - log: 2026-06-22 criterion added, implemented pending release
+- [x] **Switch-then-click fixed** - after switching the row to a different branch, clicking the row opens a NEW terminal on the switched branch instead of focusing the pre-switch terminal still running the original conversation (the reported defect)
+  - log: 2026-06-22 criterion added after the bug report; see [defects-branch-session.md](defects-branch-session.md) DEF-3
+- [x] **Strict vs lenient reuse** - row resume (current conversation) is lenient: a terminal whose conversation id is unknown (started without `--resume`) is reused, avoiding a `claude --resume` "already in use" error; Open Branched Conversation is strict: an unknown terminal is left alone and a new one launched, so the user lands in the specific branch
+  - log: 2026-06-22 criterion added, implemented pending release
+- [x] **Backend conversation id** - `terminal-cwd` reports the running claude's conversation id from its argv (`--session-id` for a fork, else `--resume`, else null for a fresh session)
+  - log: 2026-06-22 criterion added, implemented pending release
+- [x] **Fast refresh after fork** - once a fork is requested, the panel watches for the new branch JSONL at a fast cadence (2 s, bounded to ~3 minutes) and refreshes the moment it appears, instead of waiting for the 30 s poll; it only refreshes after the branch genuinely exists on disk
+  - log: 2026-06-22 criterion added after user asked for quick UI update on branch creation
+- [x] **Edge: same branch opened twice** - the second open focuses the existing terminal (exact-match reuse), not a duplicate
+  - log: 2026-06-22 criterion added, implemented pending release
+- [ ] **Edge: open a branch that is live in a fresh (no-resume) terminal** - strict open spawns `claude --resume <id>`, which claude rejects as "already in use"; the error surfaces as a toast (rare; accepted over silently focusing the wrong conversation)
+  - log: 2026-06-22 criterion added; documented trade-off, not yet exercised by a test
+- [x] **Edge: non-linux / no /proc** - the running conversation id is unavailable, so reuse falls back to lenient cwd matching as before; the fix is a Linux `/proc` capability
+  - log: 2026-06-22 criterion added, implemented pending release
+- [ ] **Edge: switch away from a fresh (no-resume) session, then click** - a panel-started new session has no `--resume` in its argv, so its conversation id is unknowable from `/proc`; lenient row reuse cannot tell it apart and may still refocus it after a switch; the fix fully covers every `--resume`-launched terminal (which is every resume/open the panel performs on an existing conversation), leaving only manually-fresh sessions as a narrowed blind spot
+  - log: 2026-06-22 criterion added; documented blind spot raised by the adversarial review (finding 3), accepted - a no-resume terminal's conversation cannot be identified
+
+### Open Branched Conversation - Notes
+
+- Reuse is keyed two ways: the observed running id stored in the microcache (the OBSERVED id, never the wanted one, so a strict reuse trusts the process not a wish) and the `/proc` walk in `_findTerminalForCwd`
+- In-flight launches coalesce per CONVERSATION (project + session id), deliberately NOT per call-mode (strict / skip-permissions): for a given conversation the end state is one focused terminal regardless of mode, and de-coalescing would risk two concurrent `claude --resume <same id>` launches colliding with "already in use"
+- The adversarial review (Mode 1, two rounds) flagged storing the wanted id (fixed: store the observed id) and the strict "already in use" on the current row (fixed: opening the current conversation is lenient); round 2 confirmed both RESOLVED and returned SHIP; remaining low findings (lenient-on-current can focus an unrelated fresh terminal, coalescing mode, nested-claude BFS, watcher concurrency) are accepted with rationale here
+
+### Open Branched Conversation - API
+
+- `GET terminal-cwd/<name>` -> `{terminal_name, cwds: [...], has_claude, session_id}`; `session_id` is the running claude's conversation (null when none / fresh)
+- `POST launch-terminal` body `{project_path, session_id?, fork_session_id?, name?, dangerously_skip_permissions?}` -> `{terminal_name}`; open-branch sends `session_id` = the chosen branch
 
 ## Copy Session ID
 

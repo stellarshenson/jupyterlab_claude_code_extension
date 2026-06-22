@@ -506,6 +506,141 @@ describe('launch spinner dismiss contract', () => {
     });
   });
 
+  /**
+   * Contract for conversation-aware terminal reuse and the Open Branched
+   * Conversation feature. The reuse path must refuse to focus a terminal
+   * running a DIFFERENT known conversation (the switch-then-click bug), and
+   * opening a specific branch must launch its own terminal (strict) so
+   * several branches stay open independently.
+   */
+  describe('conversation-aware reuse + open-branch contract', () => {
+    const findTerm = (widgetSrc.match(
+      /private async _findTerminalForCwd[\s\S]*?\n  \}/
+    ) ?? [''])[0];
+    const doResume = (widgetSrc.match(
+      /private async _doResumeInTerminal[\s\S]*?\n  \}/
+    ) ?? [''])[0];
+    const resume = (widgetSrc.match(
+      /private async _resumeInTerminal[\s\S]*?\n  \}/
+    ) ?? [''])[0];
+    const openBranch = (widgetSrc.match(
+      /private async _openBranch[\s\S]*?\n  \}/
+    ) ?? [''])[0];
+    const watch = (widgetSrc.match(/private _watchForBranch[\s\S]*?\n  \}/) ?? [
+      ''
+    ])[0];
+
+    it('terminal-cwd response carries the running conversation id', () => {
+      const iface = (widgetSrc.match(
+        /interface ITerminalCwdResponse \{[\s\S]*?\}/
+      ) ?? [''])[0];
+      expect(iface).toMatch(/session_id\?: string \| null/);
+    });
+
+    it('_findTerminalForCwd takes the wanted id and a strict flag', () => {
+      expect(findTerm).toMatch(
+        /_findTerminalForCwd\(\s*projectPath: string,\s*wantedSessionId: string \| undefined,\s*strict: boolean/
+      );
+    });
+
+    it('reuse rejects a terminal running a known different conversation', () => {
+      // Same conversation, or unknown (fresh) only in lenient mode, may reuse.
+      expect(findTerm).toMatch(/const runningId = data\.session_id \?\? null/);
+      expect(findTerm).toMatch(
+        /sameConversation = runningId === wantedSessionId/
+      );
+      expect(findTerm).toMatch(/unknownConversation = runningId === null/);
+      expect(findTerm).toMatch(
+        /if \(!\(sameConversation \|\| \(!strict && unknownConversation\)\)\) \{\s*continue;/
+      );
+    });
+
+    it('microcache reuse is gated on the conversation id', () => {
+      expect(doResume).toMatch(/cached\.sessionId === session\.session_id/);
+      expect(doResume).toMatch(/!strict && unknownConversation/);
+    });
+
+    it('microcache is tagged with the OBSERVED running id, not the wanted one', () => {
+      // Storing the wanted id would let a later strict reuse trust a
+      // fabricated tag and focus the wrong conversation (review finding 1).
+      expect(doResume).toMatch(
+        /widget: found\.widget,\s*sessionId: found\.runningId \?\? undefined/
+      );
+      expect(findTerm).toMatch(/return \{ widget, runningId \}/);
+    });
+
+    it('in-flight launches are keyed per conversation, not per project', () => {
+      expect(resume).toMatch(
+        /const key = `\$\{session\.project_path\}\\n\$\{session\.session_id \?\? ''\}`/
+      );
+      expect(resume).toMatch(/this\._pendingByPath\.(get|set)\(key/);
+    });
+
+    it('_openBranch is strict for a different branch, lenient for the current', () => {
+      // Strict on a non-current branch lands the user in THAT conversation;
+      // lenient on the current avoids a `claude --resume` "already in use"
+      // collision with a fresh terminal already running it (review finding 2).
+      expect(openBranch).toMatch(
+        /const strict = sessionId !== active\.session_id/
+      );
+      expect(openBranch).toMatch(
+        /this\._resumeInTerminal\(\s*\{ \.\.\.active, session_id: sessionId \},\s*false,\s*strict\s*\)/
+      );
+    });
+
+    it('open-branch command and submenu are wired up', () => {
+      expect(widgetSrc).toMatch(/'claude-code-sessions:open-branch'/);
+      expect(widgetSrc).toMatch(
+        /this\._openBranchSubmenu\.title\.label = 'Open Branched Conversation'/
+      );
+      // Top 5 branches populate the open submenu, each via the open command.
+      const populate = (widgetSrc.match(
+        /this\._openBranchSubmenu\.clearItems[\s\S]*?switch-branch-more'\s*\}\);/
+      ) ?? [''])[0];
+      expect(populate).toMatch(/data\.branches\.slice\(0, 5\)/);
+      expect(populate).toMatch(/command: 'claude-code-sessions:open-branch'/);
+      // The context menu shows the open submenu when the row has branches.
+      const rebuild = (widgetSrc.match(
+        /private _rebuildContextMenu[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(rebuild).toMatch(/submenu: this\._openBranchSubmenu/);
+    });
+
+    it('popup rows carry an Open button that launches the branch', () => {
+      const popup = (widgetSrc.match(
+        /private _showBranchPopup[\s\S]*?\n  \}\n/
+      ) ?? [''])[0];
+      expect(popup).toMatch(/jp-ClaudeSessionsPanel-branchOpen/);
+      expect(popup).toMatch(/void this\._openBranch\(sessionId\)/);
+      // Open appears on both the current row and each branch row.
+      expect(popup).toMatch(/openButton\(current\)/);
+      expect(popup).toMatch(/openButton\(b\.session_id\)/);
+    });
+
+    it('a new branch is watched for and surfaces fast, not on the slow poll', () => {
+      expect(watch).toMatch(/data\.current === forkId/);
+      expect(watch).toMatch(/b\.session_id === forkId/);
+      expect(watch).toMatch(/await this\._fetch\(\)/);
+      expect(watch).toMatch(/BRANCH_WATCH_MAX_ATTEMPTS/);
+      // Fork launch arms the watcher.
+      const fork = (widgetSrc.match(
+        /private async _branchSession[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(fork).toMatch(
+        /this\._watchForBranch\(session\.encoded_path, forkId\)/
+      );
+      expect(widgetSrc).toMatch(/BRANCH_WATCH_INTERVAL_MS = 2_000/);
+    });
+
+    it('the Open button is styled in base.css', () => {
+      const css: string = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'style', 'base.css'),
+        'utf-8'
+      );
+      expect(css).toMatch(/\.jp-ClaudeSessionsPanel-branchOpen \{/);
+    });
+  });
+
   it('_doResumeInTerminal dismisses spinner via dispose(), not resolve()', () => {
     expect(widgetSrc).toMatch(/spinner\.dispose\(\)/);
     expect(widgetSrc).not.toMatch(/spinner\.resolve\(\)/);

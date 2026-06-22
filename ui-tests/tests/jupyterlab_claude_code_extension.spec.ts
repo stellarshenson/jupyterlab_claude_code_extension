@@ -85,3 +85,128 @@ test('new-session menu item opens a terminal in the current folder', async ({
   const terminals = (await response.json()) as Array<{ name: string }>;
   expect(terminals.length).toBeGreaterThan(0);
 });
+
+/**
+ * The server config seeds a project ("branchy") with three parallel
+ * conversations, so the branch UI has something to act on. These tests drive
+ * the new "Open Branched Conversation" submenu and the per-row Open button in
+ * the Manage Sessions popup. The fake claude is a shell script (its process
+ * comm is not "claude"), so the server's has_claude gate is off and every
+ * open spawns a fresh terminal - which is exactly how independent branches
+ * behave; the conversation-aware REUSE logic is covered by the unit tests.
+ */
+
+/** Right-click the seeded "branchy" row and return its context menu. */
+async function openBranchyMenu(page: any) {
+  await page.goto();
+  await page.sidebar.openTab('jupyterlab-claude-code-extension');
+  const panel = page.locator('#jupyterlab-claude-code-extension');
+  await expect(panel).toBeVisible();
+  const row = panel
+    .locator('.jp-ClaudeSessionsPanel-row', { hasText: 'branchy' })
+    .first();
+  await expect(row).toBeVisible({ timeout: 15000 });
+  await row.click({ button: 'right' });
+  const menu = page.locator('.lm-Menu.jp-ClaudeSessionsContextMenu').first();
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+test('context menu offers Open Branched Conversation for a multi-branch project', async ({
+  page
+}) => {
+  const menu = await openBranchyMenu(page);
+  await expect(
+    menu.locator('.lm-Menu-itemLabel', {
+      hasText: 'Open Branched Conversation'
+    })
+  ).toBeVisible();
+  // The switch submenu still coexists (Open alongside Switch).
+  await expect(
+    menu.locator('.lm-Menu-itemLabel', {
+      hasText: 'Switch and Manage Sessions'
+    })
+  ).toBeVisible();
+});
+
+test('Open Branched Conversation lists branches and opening one launches a terminal', async ({
+  page
+}) => {
+  const menu = await openBranchyMenu(page);
+  await menu
+    .locator('.lm-Menu-itemLabel', { hasText: 'Open Branched Conversation' })
+    .hover();
+  // Hovering the submenu opens a nested Lumino menu with the branch entries.
+  const submenu = page.locator('.lm-Menu').last();
+  const entries = submenu.locator('.lm-Menu-item[data-type="command"]');
+  await expect(entries.first()).toBeVisible({ timeout: 10000 });
+  await entries.first().click();
+
+  // _openBranch -> launch-terminal (claude --resume <id>) -> JL terminal widget.
+  await expect(page.locator('.jp-Terminal')).toBeVisible({ timeout: 30000 });
+});
+
+test('Manage Sessions popup exposes a per-row Open button', async ({
+  page
+}) => {
+  const menu = await openBranchyMenu(page);
+  await menu
+    .locator('.lm-Menu-itemLabel', { hasText: 'Open Branched Conversation' })
+    .hover();
+  const submenu = page.locator('.lm-Menu').last();
+  await submenu
+    .locator('.lm-Menu-itemLabel', { hasText: 'Manage Sessions' })
+    .click();
+
+  const popup = page.locator('.jp-ClaudeSessionsPanel-branchPopup');
+  await expect(popup).toBeVisible({ timeout: 10000 });
+  // Every row (current + branches) carries an Open button.
+  const openButtons = popup.locator('.jp-ClaudeSessionsPanel-branchOpen');
+  await expect(openButtons.first()).toBeVisible();
+  const count = await openButtons.count();
+  expect(count).toBeGreaterThanOrEqual(2);
+
+  // Opening from the popup launches a terminal and dismisses the popup.
+  await openButtons.first().click();
+  await expect(page.locator('.jp-Terminal')).toBeVisible({ timeout: 30000 });
+  await expect(popup).toBeHidden();
+});
+
+test('two different branches open as two independent terminals', async ({
+  page
+}) => {
+  const before = (
+    (await (await page.request.get('/api/terminals')).json()) as unknown[]
+  ).length;
+
+  // Open the first branch.
+  let menu = await openBranchyMenu(page);
+  await menu
+    .locator('.lm-Menu-itemLabel', { hasText: 'Open Branched Conversation' })
+    .hover();
+  let submenu = page.locator('.lm-Menu').last();
+  let entries = submenu.locator('.lm-Menu-item[data-type="command"]');
+  await expect(entries.first()).toBeVisible({ timeout: 10000 });
+  await entries.first().click();
+  await expect(page.locator('.jp-Terminal').first()).toBeVisible({
+    timeout: 30000
+  });
+
+  // Open a different branch - it must NOT replace the first terminal.
+  menu = await openBranchyMenu(page);
+  await menu
+    .locator('.lm-Menu-itemLabel', { hasText: 'Open Branched Conversation' })
+    .hover();
+  submenu = page.locator('.lm-Menu').last();
+  entries = submenu.locator('.lm-Menu-item[data-type="command"]');
+  await expect(entries.nth(1)).toBeVisible({ timeout: 10000 });
+  await entries.nth(1).click();
+  await expect(page.locator('.jp-Terminal').first()).toBeVisible({
+    timeout: 30000
+  });
+
+  const after = (
+    (await (await page.request.get('/api/terminals')).json()) as unknown[]
+  ).length;
+  expect(after - before).toBeGreaterThanOrEqual(2);
+});

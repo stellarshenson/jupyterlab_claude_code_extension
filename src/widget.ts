@@ -41,6 +41,10 @@ import {
 } from './types';
 
 const POLL_INTERVAL_MS = 30_000;
+// After a fork is requested, watch for its lazily-written JSONL at this fast
+// cadence (bounded) so a new branch surfaces in seconds, not on the slow poll.
+const BRANCH_WATCH_INTERVAL_MS = 2_000;
+const BRANCH_WATCH_MAX_ATTEMPTS = 90; // ~3 minutes
 const DEFAULT_RECENT_LIMIT = 10;
 const EXPANDED_STORAGE_KEY = 'jupyterlab_claude_code_extension:expanded';
 
@@ -97,6 +101,9 @@ interface ITerminalCwdResponse {
   terminal_name: string;
   cwds: string[];
   has_claude: boolean;
+  // Conversation id the running claude is resuming, or null for a fresh
+  // (non-resumed) session. Lets reuse tell branches of one project apart.
+  session_id?: string | null;
 }
 
 // Drop any pre-v0.6.18 localStorage entries from previous schemes - they
@@ -544,53 +551,90 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
   private async _resumeInTerminal(
     session: ISession,
-    forceDangerous: boolean = false
+    forceDangerous: boolean = false,
+    strict: boolean = false
   ): Promise<void> {
-    // Coalesce concurrent clicks on the same row - subsequent clicks attach
-    // to the in-flight promise instead of creating their own terminal.
-    const inFlight = this._pendingByPath.get(session.project_path);
+    // Coalesce concurrent clicks on the SAME conversation - subsequent clicks
+    // attach to the in-flight promise instead of creating their own terminal.
+    // The key is per-conversation, so opening a different branch of the same
+    // project launches independently rather than coalescing onto this one.
+    const key = `${session.project_path}\n${session.session_id ?? ''}`;
+    const inFlight = this._pendingByPath.get(key);
     if (inFlight) {
       return inFlight;
     }
-    const promise = this._doResumeInTerminal(session, forceDangerous).finally(
-      () => {
-        this._pendingByPath.delete(session.project_path);
-      }
-    );
-    this._pendingByPath.set(session.project_path, promise);
+    const promise = this._doResumeInTerminal(
+      session,
+      forceDangerous,
+      strict
+    ).finally(() => {
+      this._pendingByPath.delete(key);
+    });
+    this._pendingByPath.set(key, promise);
     return promise;
   }
 
+  /**
+   * Reuse an open terminal only when it is running the conversation the
+   * caller wants; otherwise launch a fresh ``claude --resume <id>``.
+   *
+   * ``strict`` selects how a cwd-matching claude terminal whose conversation
+   * is UNKNOWN (started fresh, no ``--resume`` in its argv) is treated:
+   * - lenient (row resume): reuse it. A fresh session's id is not in its
+   *   argv, so this is the only way to refocus a just-started session, and
+   *   it avoids ``claude --resume`` erroring with "already in use".
+   * - strict (Open Branched Conversation): never reuse an unknown terminal -
+   *   the user picked a specific branch and must land in THAT conversation,
+   *   so a fresh/foreign terminal is left alone and a new one is launched.
+   * A terminal whose resume id is KNOWN and differs is never reused in
+   * either mode - that is the switch-then-click bug this fixes.
+   */
   private async _doResumeInTerminal(
     session: ISession,
-    forceDangerous: boolean
+    forceDangerous: boolean,
+    strict: boolean
   ): Promise<void> {
     try {
-      // Always prefer reusing an open terminal for this project. The
+      // Always prefer reusing an open terminal for this conversation. The
       // skip-permissions flag can only be applied to a fresh pty, never
       // retroactively. So if the user wants dangerous mode but an open
       // terminal already exists, show a modal asking them to close it
       // first - we won't auto-close, won't silently reuse the wrong mode.
 
-      // 1. In-memory microcache.
+      // 1. In-memory microcache (most-recent terminal for this project).
       const cached = this._terminalsByPath.get(session.project_path);
-      if (cached && !cached.isDisposed) {
-        if (forceDangerous) {
-          await this._showCloseExistingDialog();
+      if (cached && !cached.widget.isDisposed) {
+        const sameConversation = cached.sessionId === session.session_id;
+        const unknownConversation = !cached.sessionId;
+        if (sameConversation || (!strict && unknownConversation)) {
+          if (forceDangerous) {
+            await this._showCloseExistingDialog();
+          }
+          this._focusTerminal(cached.widget);
+          return;
         }
-        this._focusTerminal(cached);
-        return;
       }
 
       // 2. Walk every live terminal widget JL knows about.
-      const found = await this._findTerminalForCwd(session.project_path);
+      const found = await this._findTerminalForCwd(
+        session.project_path,
+        session.session_id,
+        strict
+      );
       if (found) {
-        this._terminalsByPath.set(session.project_path, found);
-        this._wireTerminalDisposal(session.project_path, found);
+        // Tag the cache with the OBSERVED conversation (null when the reused
+        // terminal is a fresh no-resume one), not the wanted id - otherwise a
+        // later strict reuse would trust a fabricated tag and focus the wrong
+        // conversation.
+        this._terminalsByPath.set(session.project_path, {
+          widget: found.widget,
+          sessionId: found.runningId ?? undefined
+        });
+        this._wireTerminalDisposal(session.project_path, found.widget);
         if (forceDangerous) {
           await this._showCloseExistingDialog();
         }
-        this._focusTerminal(found);
+        this._focusTerminal(found.widget);
         return;
       }
 
@@ -620,7 +664,10 @@ export class ClaudeCodeSessionsWidget extends Widget {
           name: launched.terminal_name
         });
         if (widget?.id) {
-          this._terminalsByPath.set(session.project_path, widget);
+          this._terminalsByPath.set(session.project_path, {
+            widget,
+            sessionId: session.session_id
+          });
           this._wireTerminalDisposal(session.project_path, widget);
           this._focusTerminal(widget);
         }
@@ -673,7 +720,12 @@ export class ClaudeCodeSessionsWidget extends Widget {
         name: launched.terminal_name
       });
       if (widget?.id) {
-        this._terminalsByPath.set(projectPath, widget);
+        // A fresh session's conversation id is not in its argv, so leave
+        // sessionId undefined - reuse treats it as the project's current.
+        this._terminalsByPath.set(projectPath, {
+          widget,
+          sessionId: undefined
+        });
         this._wireTerminalDisposal(projectPath, widget);
         this._focusTerminal(widget);
       }
@@ -711,7 +763,11 @@ export class ClaudeCodeSessionsWidget extends Widget {
     });
   }
 
-  private async _findTerminalForCwd(projectPath: string): Promise<any | null> {
+  private async _findTerminalForCwd(
+    projectPath: string,
+    wantedSessionId: string | undefined,
+    strict: boolean
+  ): Promise<{ widget: any; runningId: string | null } | null> {
     if (!this._terminalTracker) {
       return null;
     }
@@ -738,10 +794,25 @@ export class ClaudeCodeSessionsWidget extends Widget {
         if (!data?.has_claude) {
           continue;
         }
+        // Conversation gate: reuse only a terminal running the wanted
+        // conversation. A known, different resume id is never reused (the
+        // switch-then-click bug). An unknown id (fresh session, no --resume)
+        // is reused in lenient mode but skipped in strict mode, where the
+        // user picked a specific branch to open.
+        const runningId = data.session_id ?? null;
+        const sameConversation = runningId === wantedSessionId;
+        const unknownConversation = runningId === null;
+        if (!(sameConversation || (!strict && unknownConversation))) {
+          continue;
+        }
         const cwds = Array.isArray(data?.cwds) ? data.cwds : [];
         for (const cwd of cwds) {
           if ((cwd || '').replace(/\/+$/, '') === target) {
-            return widget;
+            // Return the OBSERVED running id (may be null for a fresh
+            // terminal), never the wanted id - the caller tags its cache
+            // with this so a later strict reuse trusts the process, not a
+            // wish.
+            return { widget, runningId };
           }
         }
       } catch (_err) {
@@ -792,7 +863,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
       return;
     }
     widget.disposed.connect(() => {
-      if (this._terminalsByPath.get(projectPath) === widget) {
+      if (this._terminalsByPath.get(projectPath)?.widget === widget) {
         this._terminalsByPath.delete(projectPath);
       }
     });
@@ -1311,6 +1382,17 @@ export class ClaudeCodeSessionsWidget extends Widget {
       }
     });
 
+    this._commands.addCommand('claude-code-sessions:open-branch', {
+      label: args => String(args.label ?? ''),
+      icon: terminalIcon,
+      execute: args => {
+        const sessionId = String(args.session_id ?? '');
+        if (sessionId) {
+          void this._openBranch(sessionId);
+        }
+      }
+    });
+
     this._commands.addCommand('claude-code-sessions:branch-session', {
       label: 'Normal',
       execute: () => void this._branchSession(false)
@@ -1361,6 +1443,14 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._branchSubmenu.addClass('jp-ClaudeSessionsContextMenu');
     this._branchSubmenu.title.label = 'Switch and Manage Sessions';
     this._branchSubmenu.title.icon = switchIcon;
+
+    // Submenu that OPENS a conversation directly in its own terminal (vs the
+    // switch submenu, which only changes which branch the row points at).
+    // Several branches can be open at once, independently.
+    this._openBranchSubmenu = new Menu({ commands: this._commands });
+    this._openBranchSubmenu.addClass('jp-ClaudeSessionsContextMenu');
+    this._openBranchSubmenu.title.label = 'Open Branched Conversation';
+    this._openBranchSubmenu.title.icon = terminalIcon;
 
     // Submenu grouping the two branch-session launch modes.
     this._branchSessionMenu = new Menu({ commands: this._commands });
@@ -1413,6 +1503,10 @@ export class ClaudeCodeSessionsWidget extends Widget {
     if (withBranches) {
       this._contextMenu.addItem({
         type: 'submenu',
+        submenu: this._openBranchSubmenu
+      });
+      this._contextMenu.addItem({
+        type: 'submenu',
         submenu: this._branchSubmenu
       });
     }
@@ -1460,6 +1554,25 @@ export class ClaudeCodeSessionsWidget extends Widget {
         }
         this._branchSubmenu.addItem({ type: 'separator' });
         this._branchSubmenu.addItem({
+          command: 'claude-code-sessions:switch-branch-more'
+        });
+
+        // Open submenu: same top-5 branches, but each launches its own
+        // terminal directly. Falls through to the Manage Sessions popup for
+        // the full list (from which any conversation can also be opened).
+        this._openBranchSubmenu.clearItems();
+        this._openBranchSubmenu.title.label = `Open Branched Conversation (${data.branches.length})`;
+        for (const b of data.branches.slice(0, 5)) {
+          this._openBranchSubmenu.addItem({
+            command: 'claude-code-sessions:open-branch',
+            args: {
+              session_id: b.session_id,
+              label: `${this._branchDisplayName(b)} - ${this._formatRelativeTime(b.file_mtime)}`
+            }
+          });
+        }
+        this._openBranchSubmenu.addItem({ type: 'separator' });
+        this._openBranchSubmenu.addItem({
           command: 'claude-code-sessions:switch-branch-more'
         });
         hasBranches = data.branches.length > 0;
@@ -1558,6 +1671,23 @@ export class ClaudeCodeSessionsWidget extends Widget {
       buttons: [Dialog.cancelButton()]
     });
 
+    // Per-row "Open" launches that conversation in its own terminal (strict
+    // reuse via _openBranch) and closes the popup. stopPropagation keeps the
+    // click from toggling selection or switching the row.
+    const openButton = (sessionId: string): HTMLButtonElement => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'jp-ClaudeSessionsPanel-branchOpen';
+      btn.textContent = 'Open';
+      btn.title = 'Open this conversation in its own terminal';
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        dialog.dispose();
+        void this._openBranch(sessionId);
+      });
+      return btn;
+    };
+
     const visibleMatches = (): IBranch[] => {
       const needle = search.value.trim().toLowerCase();
       return items.filter(
@@ -1613,6 +1743,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
       badge.className = 'jp-ClaudeSessionsPanel-branchCurrentBadge';
       badge.textContent = 'current';
       currentRow.appendChild(badge);
+      currentRow.appendChild(openButton(current));
       currentRow.appendChild(this._branchCopyButton(current));
       list.appendChild(currentRow);
 
@@ -1677,6 +1808,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
         time.textContent = this._formatRelativeTime(b.file_mtime);
         row.appendChild(time);
 
+        row.appendChild(openButton(b.session_id));
         row.appendChild(this._branchCopyButton(b.session_id));
 
         row.addEventListener('click', () => {
@@ -1902,7 +2034,12 @@ export class ClaudeCodeSessionsWidget extends Widget {
         name: launched.terminal_name
       });
       if (widget?.id) {
-        this._terminalsByPath.set(session.project_path, widget);
+        // The terminal runs the FORK (forkId), so tag it with that id - a
+        // later click on the now-current forked row reuses this terminal.
+        this._terminalsByPath.set(session.project_path, {
+          widget,
+          sessionId: forkId
+        });
         this._wireTerminalDisposal(session.project_path, widget);
         this._focusTerminal(widget);
       }
@@ -1913,8 +2050,10 @@ export class ClaudeCodeSessionsWidget extends Widget {
       spinner.dispose();
     }
     // No post-hoc title write: claude owns the name via ``-n`` and stamps it
-    // on the fork's first turn. The branch surfaces on the next poll once
-    // claude materialises its JSONL.
+    // on the fork's first turn. claude materialises the fork's JSONL lazily,
+    // so watch for it at a fast cadence and refresh the moment it appears -
+    // the branch surfaces in seconds instead of on the next slow poll.
+    this._watchForBranch(session.encoded_path, forkId);
   }
 
   /** Switch the active row's project to another conversation branch.
@@ -1960,6 +2099,70 @@ export class ClaudeCodeSessionsWidget extends Widget {
     }
   }
 
+  /** Open a specific conversation branch in its own terminal.
+   *
+   * Strict reuse: only a terminal already running THIS conversation is
+   * refocused; otherwise a fresh ``claude --resume <id>`` is launched. So
+   * several branches of one project can be open independently and side by
+   * side - opening branch B never disturbs branch A's terminal. Honours the
+   * global skip-permissions toggle like a normal resume. */
+  private async _openBranch(sessionId: string): Promise<void> {
+    const active = this._activeSession;
+    if (!active || !sessionId) {
+      return;
+    }
+    // Opening the row's CURRENT conversation behaves like a normal row resume
+    // (lenient): a fresh terminal already running it is reused, avoiding a
+    // `claude --resume` "already in use" collision. Opening a DIFFERENT branch
+    // is strict so the user lands in that specific conversation, even if some
+    // other (fresh) terminal sits at the same cwd.
+    const strict = sessionId !== active.session_id;
+    await this._resumeInTerminal(
+      { ...active, session_id: sessionId },
+      false,
+      strict
+    );
+  }
+
+  /** Poll fast for a freshly forked branch to materialise, then refresh.
+   *
+   * claude writes a forked session's JSONL lazily (on its first turn), so a
+   * just-requested branch does not exist at launch and would otherwise only
+   * surface on the next 30s poll. This watches the project's branch list
+   * every ``BRANCH_WATCH_INTERVAL_MS`` until ``forkId`` appears (as current
+   * or in the list) - then does one full refresh and stops - or until a
+   * bounded number of attempts elapses. The panel is never updated before
+   * the branch genuinely exists. */
+  private _watchForBranch(encodedPath: string, forkId: string): void {
+    let attempts = 0;
+    const tick = async (): Promise<void> => {
+      if (this.isDisposed) {
+        return;
+      }
+      attempts += 1;
+      try {
+        const data = await requestAPI<IBranchesResponse>(
+          `sessions/branches?encoded_path=${encodeURIComponent(encodedPath)}`,
+          this._serverSettings,
+          { cache: 'no-store' }
+        );
+        const appeared =
+          data.current === forkId ||
+          data.branches.some(b => b.session_id === forkId);
+        if (appeared) {
+          await this._fetch();
+          return;
+        }
+      } catch {
+        // Transient failure - keep watching until the attempt budget runs out.
+      }
+      if (attempts < BRANCH_WATCH_MAX_ATTEMPTS) {
+        window.setTimeout(() => void tick(), BRANCH_WATCH_INTERVAL_MS);
+      }
+    };
+    window.setTimeout(() => void tick(), BRANCH_WATCH_INTERVAL_MS);
+  }
+
   // --------------------------------------------------------------- polling
 
   private _startPolling(): void {
@@ -1994,6 +2197,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private _commands!: CommandRegistry;
   private _contextMenu!: Menu;
   private _branchSubmenu!: Menu;
+  private _openBranchSubmenu!: Menu;
   private _branchSessionMenu!: Menu;
   private _lastBranches: IBranch[] = [];
   private _lastBranchesCurrent = '';
@@ -2004,7 +2208,14 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private readonly _removingPaths: Set<string> = new Set();
   private readonly _terminalTracker: ITerminalTracker | null;
   private readonly _fileBrowser: IDefaultFileBrowser | null;
-  private readonly _terminalsByPath: Map<string, any> = new Map();
+  // Microcache of the most-recent terminal per project, tagged with the
+  // conversation it is running so reuse can tell a project's branches apart.
+  private readonly _terminalsByPath: Map<
+    string,
+    { widget: any; sessionId?: string }
+  > = new Map();
+  // In-flight launches, keyed per CONVERSATION (path + session id) so two
+  // different branches of one project can open independently and concurrently.
   private readonly _pendingByPath: Map<string, Promise<void>> = new Map();
   private readonly _rootDir: string;
   private _presentationMode: PresentationMode = DEFAULT_PRESENTATION_MODE;

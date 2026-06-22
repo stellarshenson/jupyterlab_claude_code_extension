@@ -4,6 +4,20 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.26] - 2026-06-22
+
+### Added
+
+- "Open Branched Conversation" right-click submenu (the 5 most recent branches) and a per-row "Open" button in the Manage Sessions popup - open any of a project's conversations directly in its own terminal; several branches can be open side by side, opening one never disturbs another
+
+### Fixed
+
+- Clicking a row after switching it to another conversation now opens the switched conversation instead of refocusing the terminal still running the original one; terminal reuse is now conversation-aware (it reuses a terminal only when it is already running the conversation you clicked)
+
+### Changed
+
+- A newly created branch session now appears in the panel within seconds (a short-lived fast watcher polls for it once it is requested) instead of waiting for the periodic 30-second refresh
+
 ## [1.2.25] - 2026-06-22
 
 ### Changed
