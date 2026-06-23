@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.34] - 2026-06-23
+
+### Fixed
+
+- Creating a branch (Branch Session) now makes the new conversation the row's current one as soon as it exists, instead of leaving the row on the parent conversation you branched from - the branch is pinned at creation (the same durable mechanism a manual switch uses), so the actively-used parent no longer overtakes it by recency and drags the row back
+
 ## [1.2.33] - 2026-06-22
 
 ### Fixed

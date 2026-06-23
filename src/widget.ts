@@ -1994,11 +1994,13 @@ export class ClaudeCodeSessionsWidget extends Widget {
    * the uuid is generated here so the forked JSONL is known up front, and
    * ``-n`` makes claude own the name: it writes the chosen name as a
    * custom-title record on its first turn and re-stamps it every turn, so
-   * it sticks even though the fork inherits the parent's title. The fork is
-   * the newest JSONL, so recency resolution makes it the row's current
-   * conversation without an explicit switch. claude writes the fork's JSONL
-   * lazily (on its first turn), so the branch appears on the next poll once
-   * it materialises - the panel cannot list a file that does not exist yet.
+   * it sticks even though the fork inherits the parent's title. The backend
+   * pins the fork as the project's current conversation at launch, so the fork
+   * becomes the row's primary the moment its JSONL lands - recency alone would
+   * not, since the actively-written parent it was branched from quickly
+   * overtakes the fork's mtime. claude writes the fork's JSONL lazily (on its
+   * first turn), so the branch appears on the next poll once it materialises -
+   * the panel cannot list a file that does not exist yet.
    */
   private async _branchSession(forceDangerous: boolean): Promise<void> {
     const session = this._activeSession;

@@ -466,6 +466,40 @@ def test_read_current_pin_rejects_tampered_content(fake_claude: Path) -> None:
     assert sessions_mod._resolve_latest(d, None) is not None
 
 
+def test_set_current_pin_writes_sidecar(fake_claude: Path) -> None:
+    """A fork pins itself as current via a ``.jl-current`` sidecar, symmetric
+    with a switch, so the new branch becomes primary once its JSONL lands."""
+    d = _make_branch_project(fake_claude, 3)
+    sessions_mod.set_current_pin(fake_claude, "/home/user/branchy", "fork-x")
+    assert (d / sessions_mod.CURRENT_PIN_FILENAME).read_text().strip() == "fork-x"
+
+
+def test_fork_pin_makes_branch_current_once_jsonl_lands(fake_claude: Path) -> None:
+    """The created branch becomes the row's current the moment its JSONL exists,
+    even while the parent it was forked from stays the most-recently-active
+    conversation - the pin overrides recency (intended branch behaviour). Until
+    the fork's lazily-written JSONL lands, the pin is dangling and recency keeps
+    the parent current."""
+    d = _make_branch_project(fake_claude, 3)  # sid-0..2, sid-2 newest
+    # Pin the fork id BEFORE its JSONL exists (claude writes it on first turn).
+    sessions_mod.set_current_pin(fake_claude, "/home/user/branchy", "fork-x")
+    # Dangling pin -> resolution falls back to recency (the parent, sid-2).
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/branchy"]["session_id"] == "sid-2"
+    # The fork's first turn writes its JSONL with a project-consistent cwd; the
+    # parent stays most-active (newer mtime). The pin still wins.
+    (d / "fork-x.jsonl").write_text('{"cwd": "/home/user/branchy"}\n')
+    os.utime(d / "fork-x.jsonl", (1_001, 1_001))  # fork is NOT the newest file
+    os.utime(d / "sid-2.jsonl", (5_000, 5_000))   # parent stays most-active
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/branchy"]["session_id"] == "fork-x"
+
+
+def test_set_current_pin_safe_when_dir_missing(fake_claude: Path) -> None:
+    """Best-effort: pinning a project with no claude dir is a silent no-op."""
+    sessions_mod.set_current_pin(fake_claude, "/home/user/brand-new", "fork-x")
+
+
 def test_removed_current_falls_back_to_next_most_recent(fake_claude: Path) -> None:
     """Edge: the current conversation's JSONL is removed externally - the
     next most recent one becomes current on the following listing."""
@@ -1120,6 +1154,32 @@ async def test_launch_terminal_fork_session_builds_fork_argv(
     assert cmd[-5:] == [
         "--resume", "sid-1", "--fork-session", "--session-id", "fork-9",
     ]
+
+
+async def test_launch_terminal_fork_pins_fork_as_current(
+    jp_fetch, fake_terminal_manager, patched_claude_dir, tmp_path
+) -> None:
+    """A fork pins itself as the project's current conversation so the new
+    branch becomes primary once its JSONL lands (intended branch behaviour)."""
+    proj = tmp_path / "myproj"
+    proj.mkdir()
+    proj_dir = (
+        patched_claude_dir / "projects" / sessions_mod._encode_path(str(proj))
+    )
+    proj_dir.mkdir(parents=True)
+    body = json.dumps({
+        "project_path": str(proj),
+        "session_id": "sid-1",
+        "fork_session_id": "fork-9",
+    })
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "launch-terminal",
+        method="POST", body=body,
+    )
+    assert response.code == 200
+    assert (
+        proj_dir / sessions_mod.CURRENT_PIN_FILENAME
+    ).read_text().strip() == "fork-9"
 
 
 async def test_launch_terminal_fork_requires_session_id(

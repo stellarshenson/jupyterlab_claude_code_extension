@@ -104,9 +104,10 @@ Context-menu action forks the row's current conversation into a new named sessio
   - log: 2026-06-12 criterion added
   - log: 2026-06-12 implemented, pending release
   - log: 2026-06-21 `-n <name>` added to the launch argv (v1.2.22)
-- [x] **Becomes current** - the forked JSONL is the project's newest, so the recency resolution makes it the row's current conversation without an explicit switch
+- [x] **Becomes current** - creating a branch makes it the row's current (primary) conversation the moment its JSONL lands; the backend pins the fork id as the project's `.jl-current` at launch and `_resolve_latest` honours the pin over recency - recency alone does NOT suffice, because the actively-written parent the fork was branched from overtakes the fork's mtime and would otherwise drag the row back to it
   - log: 2026-06-12 criterion added
   - log: 2026-06-12 implemented (by construction, no extra code), pending release
+  - log: 2026-06-23 reworked for DEF-6: the recency-only "becomes current" failed whenever the parent stayed active (the common case - you branch from a session you are using), so the branch appeared but was not switched to; fork now writes the `.jl-current` pin at launch (symmetric with a switch), pytest green
 - [x] **Name ownership** - the chosen name is forced by `claude -n <name>`; claude writes it as a `custom-title` record on its first turn and re-stamps it every turn, so it sticks even though the fork inherits the parent's title; no post-hoc `set-title` append is involved
   - log: 2026-06-21 criterion added - supersedes the obsolete "Name stamping" via `sessions/set-title`; DEF-1
   - log: 2026-06-21 implemented - set-title poll + false warning removed, name owned by `claude -n`; jest 43 + pytest 79 green, adversarial review SHIP
@@ -117,6 +118,8 @@ Context-menu action forks the row's current conversation into a new named sessio
   - log: 2026-06-22 updated - fork now triggers a bounded fast watcher so the branch surfaces in seconds once it exists, instead of waiting for the 30 s poll
   - log: 2026-06-21 criterion added - DEF-2; confirmed empirically (file absent through 20 s idle; claude rejects a pre-seeded id with "Session ID ... is already in use", so the file cannot be created ahead of time)
   - log: 2026-06-21 implemented - false warning removed; gap documented as a claude limitation (wontfix-external), mitigated by the forced refresh re-poll
+- [x] **Edge: parent stays active after a fork** - continuing to work in the parent conversation (the one branched from) after creating a branch does NOT drag the row back to the parent; the fork's `.jl-current` pin holds the new branch as current (same durable-pin guarantee as a switch, see Branch Switching "Edge: activity in another conversation after a switch")
+  - log: 2026-06-23 criterion added for DEF-6; pin written at fork launch, pytest green
 - [x] **Edge: fork without session id** - backend rejects `fork_session_id` without `session_id` (400 `invalid_fork_session_id`)
   - log: 2026-06-12 criterion added
   - log: 2026-06-12 implemented, pending release
@@ -125,12 +128,12 @@ Context-menu action forks the row's current conversation into a new named sessio
 
 - Fork mechanism is claude's own `--fork-session` (battle-tested) rather than a JSONL copy; the name is owned by `claude -n`, so no on-disk title write by the extension is needed
 - The fork's JSONL is created lazily by claude on the first turn; the extension cannot pre-create it (claude refuses a session id whose file already exists) nor force the first turn, so the branch becomes visible only after the user interacts - this is a claude limitation, not an extension bug (DEF-2)
-- Main vs branch has no intrinsic marker in claude's data - "main" is whatever the recency resolution picks; the popup badges it `current`
+- Main vs branch has no intrinsic marker in claude's data - "current" is whatever resolution picks (the `.jl-current` pin when set, else the most recent project-consistent JSONL); the popup badges it `current`. A fork pins itself at launch so the new branch wins over the still-active parent (DEF-6)
 - The obsolete `sessions/set-title` endpoint and its `_stampForkTitle` poll were removed once `-n` took over naming (DEF-1); they only ever existed as the pre-`-n` naming path and their 30 s timeout produced a false failure warning
 
 ### Branch Session - API
 
-- `POST launch-terminal` body gains optional `fork_session_id` (requires `session_id`) and optional `name` -> argv `--resume <sid> --fork-session --session-id <fork id> -n <name>`; 400 `invalid_fork_session_id`, 400 `invalid_name` for a blank name
+- `POST launch-terminal` body gains optional `fork_session_id` (requires `session_id`) and optional `name` -> argv `--resume <sid> --fork-session --session-id <fork id> -n <name>`; 400 `invalid_fork_session_id`, 400 `invalid_name` for a blank name; a successful fork also pins the fork id as the project's current (`set_current_pin` writes `.jl-current`), so the branch becomes primary once its JSONL lands (DEF-6)
 
 ## Branch Switching
 

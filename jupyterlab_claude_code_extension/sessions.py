@@ -210,6 +210,32 @@ def clear_current_pin(claude_root: Path, project_path: str) -> None:
         pass
 
 
+def set_current_pin(claude_root: Path, project_path: str, session_id: str) -> None:
+    """Pin ``session_id`` as a project's current conversation.
+
+    Called when a branch is created (a fork): branching is an explicit "go to
+    this new conversation" action, so the new branch should become the row's
+    current the moment it exists. Unlike a brand-new session - which becomes
+    current by recency on its own (it is the newest file) and so only needs the
+    pin cleared - a fork is shadowed by the parent you branched from: that
+    parent is the conversation you are actively in, so its JSONL keeps being
+    appended and its mtime overtakes the fork's, dragging the row back to it.
+    Only a durable pin makes the fork win over that recency (see
+    ``_resolve_latest``). The pin is written at launch, before the fork's first
+    turn writes its JSONL, so it is dangling until then; ``_resolve_latest``
+    ignores a dangling pin and recency keeps the parent current in the meantime,
+    then the row flips to the branch once the file materialises. An abandoned
+    fork leaves a benign dangling pin (ignored; cleared by the next new session,
+    overwritten by the next switch). Best-effort: an odd path or write failure
+    leaves resolution to recency.
+    """
+    try:
+        project_dir = claude_root / PROJECTS_DIRNAME / _encode_path(project_path)
+    except (OSError, ValueError):
+        return
+    _write_current_pin(project_dir, session_id)
+
+
 def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
     """Pick the representative session for a project dir, trusting the filesystem.
 

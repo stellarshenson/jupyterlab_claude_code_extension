@@ -563,9 +563,16 @@ class LaunchClaudeTerminalHandler(APIHandler):
             return
         # A new session supersedes a prior switch: clear the project's pin so
         # recency resumes and the new conversation (newest on disk once it
-        # writes) becomes current, instead of staying behind a pinned branch.
+        # writes) becomes current, instead of staying behind a pinned branch. A
+        # fork is the opposite - it is shadowed by the actively-written parent,
+        # so pin it as current to make the new branch become primary the moment
+        # its JSONL lands (see ``set_current_pin``).
         if new_session_id:
             sessions_mod.clear_current_pin(sessions_mod.claude_dir(), project_path)
+        elif fork_session_id:
+            sessions_mod.set_current_pin(
+                sessions_mod.claude_dir(), project_path, fork_session_id
+            )
         self.finish(json.dumps({"terminal_name": name}))
 
 
