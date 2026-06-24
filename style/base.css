@@ -352,32 +352,71 @@
   margin: 0 auto;
 }
 
-/* Branch-switch popup: search box over a scrollable branch list. */
+/* ============================================================
+   Sessions Management popup - Duoptimum Hub design language,
+   driven entirely by JupyterLab theme variables so a theme flip
+   (light / dark / custom) restyles the whole screen at once. The
+   --ccs-* tokens map the design system onto --jp-* vars: the look
+   is the design language, the colours are the current theme.
+   ============================================================ */
 .jp-ClaudeSessionsPanel-branchPopup {
+  --ccs-radius-sm: 4px;
+  --ccs-radius: 6px;
+  --ccs-radius-lg: 8px;
+  --ccs-surface: var(--jp-layout-color1);
+  --ccs-surface-hover: var(--jp-layout-color2);
+  --ccs-border: var(--jp-border-color2);
+  --ccs-border-subtle: var(--jp-border-color3);
+  --ccs-text: var(--jp-ui-font-color1);
+  --ccs-text-muted: var(--jp-ui-font-color2);
+
+  /* font-color3 is the disabled/hint level - too dim for content in some themes
+     (e.g. Stellars Dark renders it ~#5a5a5a, near-invisible on the surface), so
+     readable secondary labels (times, "current", counts) stay at font-color2. */
+  --ccs-text-subtle: var(--jp-ui-font-color2);
+  --ccs-accent: var(--jp-brand-color1);
+  --ccs-accent-soft: color-mix(
+    in srgb,
+    var(--jp-brand-color1) 14%,
+    transparent
+  );
+  --ccs-danger: var(--jp-error-color1);
+  --ccs-danger-soft: color-mix(
+    in srgb,
+    var(--jp-error-color1) 15%,
+    transparent
+  );
+
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  min-width: 320px;
+  gap: 10px;
+  min-width: 360px;
 }
 
+/* Design-language text input: 6px radius, accent focus ring. */
 .jp-ClaudeSessionsPanel-branchSearch {
   width: 100%;
   box-sizing: border-box;
-  padding: 2px 6px;
-  background: var(--jp-input-background, var(--jp-layout-color1));
-  color: var(--jp-ui-font-color1);
-  border: 1px solid var(--jp-border-color2);
-  border-radius: 2px;
+  height: 30px;
+  padding: 0 11px;
+  background: var(--ccs-surface);
+  color: var(--ccs-text);
+  border: 1px solid var(--ccs-border);
+  border-radius: var(--ccs-radius);
   font-family: inherit;
   font-size: var(--jp-ui-font-size1);
   outline: none;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .jp-ClaudeSessionsPanel-branchSearch:focus {
-  border-color: var(--jp-brand-color1);
+  border-color: var(--ccs-accent);
+  box-shadow: 0 0 0 3px var(--ccs-accent-soft);
 }
 
-/* Table header strip above the scrollable list - select-all and count. */
+/* Header strip above the list - select-all left, count right. */
 .jp-ClaudeSessionsPanel-branchHeader {
   display: flex;
   align-items: center;
@@ -386,8 +425,9 @@
 }
 
 .jp-ClaudeSessionsPanel-branchHeaderCount {
-  color: var(--jp-ui-font-color2);
+  color: var(--ccs-text-subtle);
   font-size: var(--jp-ui-font-size0);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Fixed-width first column so the checkbox (branch rows) and the empty cell
@@ -402,12 +442,15 @@
   cursor: pointer;
 }
 
+/* The list is a surface card; rows are flush and hairline-separated. The
+   rounded corners clip the row hover fills (overflow-y establishes the clip). */
 .jp-ClaudeSessionsPanel-branchList {
-  max-height: 280px;
+  max-height: 300px;
   overflow-y: auto;
   position: relative;
-  border: 1px solid var(--jp-border-color2);
-  border-radius: 2px;
+  background: var(--ccs-surface);
+  border: 1px solid var(--ccs-border);
+  border-radius: var(--ccs-radius-lg);
 }
 
 /* Visually-hidden polite live region (delete announcements). */
@@ -427,17 +470,20 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  height: 24px;
-  line-height: 24px;
-  padding: 0 8px;
+  gap: 10px;
+  height: 30px;
+  padding: 0 10px;
   cursor: pointer;
-  border-radius: 2px;
+  border-bottom: 1px solid var(--ccs-border-subtle);
   font-size: var(--jp-ui-font-size1);
 }
 
+.jp-ClaudeSessionsPanel-branchRow:last-child {
+  border-bottom: none;
+}
+
 .jp-ClaudeSessionsPanel-branchRow:hover {
-  background: var(--jp-layout-color2);
+  background: var(--ccs-surface-hover);
 }
 
 .jp-ClaudeSessionsPanel-branchLabel {
@@ -446,35 +492,49 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--ccs-text);
 }
 
+/* Copy id - design-language action icon: wireframe by default, hovers to a
+   surface tint. Square 24px hit target keeps it aligned in the row. */
 .jp-ClaudeSessionsPanel-branchCopy {
   flex: none;
-  display: flex;
-  align-items: center;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
   padding: 0;
   border: none;
+  border-radius: var(--ccs-radius-sm);
   background: transparent;
-  color: var(--jp-ui-font-color2);
+  color: var(--ccs-text-subtle);
   cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .jp-ClaudeSessionsPanel-branchCopy:hover {
-  color: var(--jp-ui-font-color1);
+  background: var(--ccs-surface-hover);
+  color: var(--ccs-text);
 }
 
-/* Per-row "Open" launches the conversation in its own terminal. Compact
-   brand-outlined button matching the popup design language (2px radius). */
+/* Per-row "Open" launches the conversation in its own terminal. Design-language
+   list button: outlined accent, fills to the accent on hover (6px radius). */
 .jp-ClaudeSessionsPanel-branchOpen {
   flex: none;
-  padding: 0 8px;
+  height: 24px;
+  padding: 0 10px;
   border: 1px solid var(--jp-brand-color1);
-  border-radius: 2px;
+  border-radius: var(--ccs-radius);
   background: transparent;
   color: var(--jp-brand-color1);
   font-size: var(--jp-ui-font-size0);
+  font-weight: 500;
   cursor: pointer;
-  transition: background 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .jp-ClaudeSessionsPanel-branchOpen:hover {
@@ -487,31 +547,33 @@
   width: 4em;
   white-space: nowrap;
   text-align: right;
-  color: var(--jp-ui-font-color2);
+  color: var(--ccs-text-subtle);
   font-size: var(--jp-ui-font-size0);
+  font-variant-numeric: tabular-nums;
 }
 
 .jp-ClaudeSessionsPanel-branchRow input[type='checkbox'] {
   flex: none;
   margin: 0;
   cursor: pointer;
+  accent-color: var(--jp-brand-color1);
 }
 
 /* The current conversation is pinned at the top of the scroll area and
-   accented (brand left-bar + tint) so it reads as the active one - not
-   dimmed; it is not selectable or deletable. */
+   accented (brand left-bar + soft tint, the design-language left-edge accent)
+   so it reads as the active one - not dimmed; not selectable or deletable. */
 .jp-ClaudeSessionsPanel-branchRow.jp-mod-current {
   position: sticky;
   top: 0;
   z-index: 1;
   cursor: default;
-  background: var(--jp-layout-color2);
+  background: var(--ccs-surface-hover);
   border-left: 3px solid var(--jp-brand-color1);
-  padding-left: 5px;
+  padding-left: 7px;
 }
 
 .jp-ClaudeSessionsPanel-branchRow.jp-mod-current:hover {
-  background: var(--jp-layout-color2);
+  background: var(--ccs-surface-hover);
 }
 
 /* The current row's select cell is an empty alignment spacer - no pointer. */
@@ -520,10 +582,11 @@
   cursor: default;
 }
 
+/* Plain, understated "current" marker - deliberately not a loud chip. */
 .jp-ClaudeSessionsPanel-branchCurrentBadge {
   flex: none;
   white-space: nowrap;
-  color: var(--jp-ui-font-color2);
+  color: var(--ccs-text-subtle);
   font-size: var(--jp-ui-font-size0);
 }
 
@@ -531,9 +594,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 6px;
+  padding: 0 2px;
   cursor: pointer;
-  color: var(--jp-ui-font-color2);
+  color: var(--ccs-text-subtle);
   font-size: var(--jp-ui-font-size0);
   user-select: none;
 }
@@ -541,23 +604,26 @@
 .jp-ClaudeSessionsPanel-branchSelectAll input[type='checkbox'] {
   margin: 0;
   cursor: pointer;
+  accent-color: var(--jp-brand-color1);
 }
 
 .jp-ClaudeSessionsPanel-branchFooter {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 26px;
 }
 
 .jp-ClaudeSessionsPanel-branchSelCount {
-  color: var(--jp-ui-font-color2);
+  color: var(--ccs-text-subtle);
   font-size: var(--jp-ui-font-size0);
+  font-variant-numeric: tabular-nums;
 }
 
 /* The post-delete "N moved to trash" feedback reads at full strength - it is
    the recoverability cue that stands in for a confirmation prompt. */
 .jp-ClaudeSessionsPanel-branchSelCount.jp-mod-deleted {
-  color: var(--jp-ui-font-color1);
+  color: var(--ccs-text);
 }
 
 /* While a delete is in flight the whole body is scrimmed so a mid-flight tick,
@@ -568,30 +634,38 @@
   opacity: 0.6;
 }
 
-/* Destructive: deletes immediately (no confirmation), so it reads in the
-   error colour and fills on hover. */
+/* Destructive: deletes immediately (no confirmation). Design-language
+   list-danger button - always an OUTLINE, never a filled primary: a dim,
+   inactive outline while nothing is selected, a lit error outline once a
+   selection arms it, and only a soft error tint on hover (6px radius). */
 .jp-ClaudeSessionsPanel-branchDelete {
-  padding: 2px 8px;
+  height: 26px;
+  padding: 0 12px;
   border: 1px solid var(--jp-error-color1);
-  border-radius: 2px;
-  background: var(--jp-layout-color1);
+  border-radius: var(--ccs-radius);
+  background: transparent;
   color: var(--jp-error-color1);
+  font-size: var(--jp-ui-font-size0);
+  font-weight: 500;
   cursor: pointer;
   transition:
     background 120ms ease,
+    border-color 120ms ease,
     color 120ms ease;
 }
 
+/* Disabled = inactive outline: theme border + muted text, plainly not primary
+   and not actionable, but still legible (no wash-out). */
 .jp-ClaudeSessionsPanel-branchDelete:disabled {
-  opacity: 0.5;
   cursor: default;
-  border-color: var(--jp-border-color1);
-  color: var(--jp-ui-font-color2);
+  border-color: var(--ccs-border);
+  color: var(--ccs-text-muted);
 }
 
+/* Hover while armed stays an outline - a soft error tint, not a solid fill. */
 .jp-ClaudeSessionsPanel-branchDelete:hover:not(:disabled) {
-  background: var(--jp-error-color1);
-  color: var(--jp-ui-inverse-font-color1, #fff);
+  background: var(--ccs-danger-soft);
+  color: var(--jp-error-color1);
 }
 
 /* Last-activity time on session rows - dim, fixed-width right-aligned
