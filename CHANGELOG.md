@@ -4,6 +4,13 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.35] - 2026-06-24
+
+### Changed
+
+- Rebuilt the "Manage Sessions" popup in the Duoptimum Hub design language, driven by the active JupyterLab theme so a light/dark/custom theme flip restyles the whole screen: the conversation list is now a surface card with hairline-separated rows, the search box has an accent focus ring, "Open" is an outlined-accent button and "Copy" a quiet wireframe icon, and times read in a tabular figure column
+- The "Delete" button is now an outline in every state - a neutral inactive outline when nothing is selected, a lit error outline once conversations are selected, and a soft error tint on hover (no longer a solid fill) - and the time and "current" labels are more legible (they no longer wash out against the row backgrounds in dark themes)
+
 ## [1.2.34] - 2026-06-23
 
 ### Fixed
