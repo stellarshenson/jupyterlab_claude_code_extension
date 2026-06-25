@@ -242,7 +242,10 @@
   justify-content: center;
   width: 14px;
   height: 14px;
-  color: var(--jp-warn-color1);
+
+  /* Dim the standard jp-icon3 star so the favourite marker is quiet, not an
+     alarm - lowers its visual weight against the row text. */
+  opacity: 0.5;
 }
 
 .jp-ClaudeSessionsPanel-favStar svg {

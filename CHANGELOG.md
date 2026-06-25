@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.36] - 2026-06-25
+
+### Changed
+
+- The favourite star beside starred rows is now a quiet, dimmed gray marker instead of a bright gold one - it no longer competes with the row text for attention
+
 ## [1.2.35] - 2026-06-24
 
 ### Changed
