@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.38] - 2026-07-01
+
+### Changed
+
+- The presentation-mode setting's default option is now called `name` (was `folder`) - it has always shown the session name Claude records for a project, with the project folder name used as the initial name, so the option is now named for what it does. Existing settings that still say `folder` keep working and resolve to the same `name` mode
+
 ## [1.2.37] - 2026-07-01
 
 ### Fixed

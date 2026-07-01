@@ -50,9 +50,9 @@ const EXPANDED_STORAGE_KEY = 'jupyterlab_claude_code_extension:expanded';
 
 type SectionKey = 'favourites' | 'recent' | 'all';
 
-export type PresentationMode = 'folder' | 'path';
+export type PresentationMode = 'name' | 'path';
 
-const DEFAULT_PRESENTATION_MODE: PresentationMode = 'folder';
+const DEFAULT_PRESENTATION_MODE: PresentationMode = 'name';
 
 const SECTION_LABELS: Record<SectionKey, string> = {
   favourites: 'Favorites',
@@ -155,7 +155,8 @@ export class ClaudeCodeSessionsWidget extends Widget {
     });
   }
 
-  /** Choose how rows are labelled: by session name, folder name, or path. */
+  /** Choose how rows are labelled: by name (session name, initially the
+   * folder name), or by path. */
   setPresentationMode(mode: PresentationMode): void {
     if (this._presentationMode === mode) {
       return;
@@ -869,7 +870,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
   // -------------------------------------------------------------- rendering
 
-  /** Apply the presentation-mode setting (basename collisions for folder
+  /** Apply the presentation-mode setting (basename collisions for name
    * mode are resolved separately in ``_disambiguate``). */
   private _displayName(s: ISession): string {
     const folder = this._basename(s.project_path) || s.encoded_path;

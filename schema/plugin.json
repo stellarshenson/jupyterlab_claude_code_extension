@@ -8,9 +8,9 @@
     "presentationMode": {
       "type": "string",
       "title": "Presentation mode",
-      "description": "How session rows are labelled. `folder` (default) shows the session name Claude records for the project (so a `/rename` shows through), falling back to the project folder name when no session name exists and walking up the path to disambiguate when two projects share a basename. `path` shows the project path relative to the JupyterLab notebook root (absolute if outside it).",
-      "enum": ["folder", "path"],
-      "default": "folder"
+      "description": "How session rows are labelled. `name` (default) shows the session name Claude records for the project (so a `/rename` shows through); the initial name is taken from the project folder name, then the path is walked up to disambiguate when two projects share a folder name. `path` shows the project path relative to the JupyterLab notebook root (absolute if outside it).",
+      "enum": ["name", "path"],
+      "default": "name"
     },
     "recentLimit": {
       "type": "integer",

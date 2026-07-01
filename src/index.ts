@@ -77,10 +77,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
         const apply = (): void => {
           const mode = settings.get('presentationMode').composite as string;
-          // 'session' was a pre-1.1.8 mode that pulled labels from the
-          // session's `name` field; we now ignore that field entirely, so
-          // any value other than 'path' is treated as 'folder'.
-          widget.setPresentationMode(mode === 'path' ? 'path' : 'folder');
+          // 'folder' was the previous name for this mode; any value other
+          // than 'path' is treated as 'name', so a saved 'folder' still maps
+          // to the name mode.
+          widget.setPresentationMode(mode === 'path' ? 'path' : 'name');
           const limit = settings.get('recentLimit').composite as number;
           if (typeof limit === 'number') {
             widget.setRecentLimit(limit);
