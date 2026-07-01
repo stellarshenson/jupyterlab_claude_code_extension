@@ -73,6 +73,8 @@ def session_state_by_cwd(claude_root: Path) -> dict[str, dict]:
       * ``session_id`` - the sessionId in that record
       * ``updated_at`` - ms-epoch of last update
       * ``name`` - the session ``name`` from that record (may be ``None``)
+      * ``remote_control`` - True iff the record is a live, bridged session
+        (non-null ``bridgeSessionId``); a plain live claude is not remote control
 
     When multiple ``<pid>.json`` files exist for the same cwd, the one with
     the highest ``updatedAt`` wins - so the most recently active session's
@@ -98,11 +100,18 @@ def session_state_by_cwd(claude_root: Path) -> dict[str, dict]:
         live = isinstance(pid, int) and _pid_alive(pid)
         sid = data.get("sessionId") if isinstance(data.get("sessionId"), str) else None
         name = data.get("name") if isinstance(data.get("name"), str) else None
+        # Claude writes a sessions/<pid>.json for EVERY interactive session; the
+        # remote-control ("bridge") link is signalled by a non-null
+        # ``bridgeSessionId``. A live pid alone does NOT mean remote control
+        # (DEF-7) - require both a live process and an active bridge.
+        bridge = data.get("bridgeSessionId")
+        remote_control = bool(live and isinstance(bridge, str) and bridge)
         by_cwd[cwd] = {
             "live_pid": pid if live else None,
             "session_id": sid,
             "updated_at": updated_at,
             "name": name,
+            "remote_control": remote_control,
         }
     return by_cwd
 
@@ -631,7 +640,7 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
             "modified": latest.get("modified"),
             "file_mtime": latest.get("fileMtime") or 0,
             "git_branch": latest.get("gitBranch"),
-            "remote_control": state.get("live_pid") is not None,
+            "remote_control": bool(state.get("remote_control")),
             "favourite": project_path in favourites,
             "name_source": name_source,
             "extra_sessions": extra_sessions,

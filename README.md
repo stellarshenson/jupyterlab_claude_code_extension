@@ -26,7 +26,7 @@ Chat-panel extensions re-implement the agent loop and trail the real tool. This 
 ## Features
 
 - **Three-section side panel** - Favorites, Recent, and All projects, each scrolling independently
-- **Live indicator** - a green dot marks sessions that are currently running somewhere
+- **Remote control indicator** - a green dot marks sessions that are actively under Claude's remote control, not merely a terminal that happens to be running
 - **One-click resume** - click a row to jump back into that session in a terminal. If a terminal for the project is already open, it's reused instead of duplicated
 - **Favorites** - star projects you keep coming back to via the right-click menu
 - **Remove** - drop a project's Claude history from the panel via the right-click menu; a confirmation dialog names the project and warns it removes the whole project and all its conversations before anything is touched, then the history folder is moved to the trash (it honours JupyterLab's "move files to trash" setting), not deleted permanently

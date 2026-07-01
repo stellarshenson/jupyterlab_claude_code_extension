@@ -135,20 +135,32 @@ def test_list_sessions_marks_favourites(fake_claude: Path) -> None:
     assert rows["/home/user/projB"]["favourite"] is False
 
 
-def test_remote_control_flag_uses_live_pids(fake_claude: Path) -> None:
+def test_remote_control_requires_live_bridged_session(fake_claude: Path) -> None:
+    """remote_control is True only for a live, bridged (remote-controllable)
+    session. Claude writes a sessions/<pid>.json for EVERY interactive session;
+    the remote-control link is signalled by a non-null bridgeSessionId, so a
+    plain live claude (bridge null) must NOT light the indicator (DEF-7)."""
     sessions_dir = fake_claude / "sessions"
     sessions_dir.mkdir()
-    # PID 1 is always alive on POSIX (init); use it as a proxy for "live"
+    # projA: live (pid 1 = init, always alive on POSIX) AND bridged -> active
     (sessions_dir / "1.json").write_text(json.dumps({
-        "pid": 1, "sessionId": "x", "cwd": "/home/user/projA", "startedAt": 0,
+        "pid": 1, "sessionId": "x", "cwd": "/home/user/projA", "updatedAt": 1,
+        "bridgeSessionId": "session_abc",
     }))
-    # A guaranteed-dead PID (very high)
+    # projB: live but NOT bridged -> the DEF-7 false-positive case, must be False
+    (sessions_dir / "2.json").write_text(json.dumps({
+        "pid": 1, "sessionId": "y", "cwd": "/home/user/projB", "updatedAt": 1,
+        "bridgeSessionId": None,
+    }))
+    # projC: bridged but the process is dead -> not controllable
     (sessions_dir / "9999999.json").write_text(json.dumps({
-        "pid": 9_999_999, "sessionId": "y", "cwd": "/home/user/projB", "startedAt": 0,
+        "pid": 9_999_999, "sessionId": "z", "cwd": "/home/user/projC", "updatedAt": 1,
+        "bridgeSessionId": "session_def",
     }))
     rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
     assert rows["/home/user/projA"]["remote_control"] is True
     assert rows["/home/user/projB"]["remote_control"] is False
+    assert rows["/home/user/projC"]["remote_control"] is False
 
 
 def test_pid_file_name_is_honoured_as_the_row_label(

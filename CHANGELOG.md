@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.37] - 2026-07-01
+
+### Fixed
+
+- The green "remote control active" indicator no longer lights for a session that is merely running - it now marks only sessions genuinely under Claude's remote control. A plain interactive `claude` in a terminal registers a live process but is not remotely controllable, and used to falsely show the indicator (DEF-7)
+
 ## [1.2.36] - 2026-06-25
 
 ### Changed

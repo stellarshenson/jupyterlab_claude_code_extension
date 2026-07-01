@@ -160,7 +160,7 @@ Context-menu submenu switches a project's current conversation to another branch
 - [x] **Sticky switch** - the switched conversation stays the row's current across refreshes and across continued activity in another conversation, until the user switches again; persisted as the `.jl-current` pin and honoured over recency by `_resolve_latest`
   - log: 2026-06-22 criterion added for DEF-5; pin implemented, pytest green; live-verified against the restarted server (pin held when another conversation's mtime was bumped newer)
 - [x] **Edge: activity in another conversation after a switch** - working in conversation A after switching to B does NOT drag the row back to A; the durable pin holds B (the recency-revert defect)
-  - log: 2026-06-22 criterion added; see [defects-branch-session.md](defects-branch-session.md) DEF-5
+  - log: 2026-06-22 criterion added; see [defects.md](defects.md) DEF-5
 - [x] **Edge: pinned conversation deleted** - a dangling pin (its JSONL gone) is ignored and recency resumes
   - log: 2026-06-22 criterion added; pytest green
 - [x] **Edge: new session resets the pin** - starting a New Session in a pinned project clears the pin (it does not write the not-yet-existent new id), so the new conversation becomes current by recency once its JSONL lands; abandoning it before its first turn falls back to the most-recent existing conversation, never a dangling pin
@@ -260,7 +260,7 @@ A context submenu and a per-row popup action open any of a project's conversatio
   - log: 2026-06-22 criterion added, implemented pending release
   - log: 2026-06-22 strengthened for DEF-4: dropped the lenient "unknown-conversation" reuse entirely; reuse is now a single rule - `runningId === wantedSessionId`
 - [x] **Switch-then-click fixed** - after switching the row to a different branch, clicking the row opens a NEW terminal on the switched branch instead of focusing the pre-switch terminal still running the original conversation (the reported defect)
-  - log: 2026-06-22 criterion added after the bug report; see [defects-branch-session.md](defects-branch-session.md) DEF-3
+  - log: 2026-06-22 criterion added after the bug report; see [defects.md](defects.md) DEF-3
   - log: 2026-06-22 DEF-3 reopened as DEF-4 - the lenient branch still reused an UNKNOWN-conversation terminal; the positive-match rule + identifiable launches close it
 - [x] **Every launch is identifiable** - every terminal the extension launches carries an explicit conversation id in its argv so reuse can match it: resume -> `--resume <id>`, fork -> `--session-id <fork>`, and New Session -> `--session-id <uuid>` (a fresh session with a frontend-chosen id); a terminal with no id is therefore necessarily one the extension did not start and is never reused
   - log: 2026-06-22 criterion added for DEF-4; New Session launch gained `new_session_id`, jest + pytest green
