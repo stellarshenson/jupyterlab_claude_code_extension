@@ -1252,6 +1252,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
         this._activeSession?.favourite
           ? 'Remove from Favorites'
           : 'Add to Favorites',
+      icon: starFilledIcon,
       execute: () => {
         if (this._activeSession) {
           void this._toggleFavourite(this._activeSession);

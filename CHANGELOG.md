@@ -4,6 +4,16 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.40] - 2026-07-01
+
+### Fixed
+
+- The divider line in the row context menu (under "Copy Session ID") no longer renders as two misaligned segments - the line under the icon column now sits at the same height as under the text and reads as one continuous rule
+
+### Changed
+
+- The "Add to Favorites" / "Remove from Favorites" context-menu item now shows a star icon, matching the other actioned items in the menu
+
 ## [1.2.39] - 2026-07-01
 
 ### Changed

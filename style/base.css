@@ -344,8 +344,17 @@
  * the cell which works for its own icons; for ours we additionally shift
  * the SVG to the cell middle so the trash glyph aligns with "Remove from
  * Claude" instead of hanging.
+ *
+ * Exclude separator rows: JL draws the separator as a border-top on an
+ * ::after inside every cell of the row (icon + label + shortcut), so all
+ * segments must share one baseline to read as a single line. Applying
+ * vertical-align:middle to the separator's icon cell offsets its segment
+ * from the label cell's baseline default, breaking the divider under the
+ * icon column.
  */
-.jp-ClaudeSessionsContextMenu .lm-Menu-itemIcon {
+.jp-ClaudeSessionsContextMenu
+  .lm-Menu-item:not([data-type='separator'])
+  .lm-Menu-itemIcon {
   vertical-align: middle;
 }
 
