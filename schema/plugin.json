@@ -29,9 +29,9 @@
     "sidebar": {
       "type": "string",
       "title": "Sidebar position",
-      "description": "Which JupyterLab sidebar to dock the panel to. `left` (default) keeps it next to the file browser. `right` puts it opposite. Takes effect on the next JupyterLab reload.",
+      "description": "Which JupyterLab sidebar to dock the panel to. `right` (default) keeps it clear of the file browser. `left` puts it next to the file browser. Takes effect on the next JupyterLab reload.",
       "enum": ["left", "right"],
-      "default": "left"
+      "default": "right"
     }
   },
   "additionalProperties": false

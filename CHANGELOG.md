@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.39] - 2026-07-01
+
+### Changed
+
+- The panel now docks to the right sidebar by default (was left), so it no longer crowds the file browser. The "Sidebar position" setting still offers both sides, and any explicit choice you have already made is kept
+
 ## [1.2.38] - 2026-07-01
 
 ### Changed

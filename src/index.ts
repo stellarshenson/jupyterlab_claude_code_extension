@@ -63,8 +63,8 @@ const plugin: JupyterFrontEndPlugin<void> = {
     );
 
     // Read the sidebar setting before docking so we add the widget to the
-    // user's preferred side on first paint. Default to left.
-    let currentSidebar: 'left' | 'right' = 'left';
+    // user's preferred side on first paint. Default to right.
+    let currentSidebar: 'left' | 'right' = 'right';
 
     if (settingRegistry) {
       try {
