@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,14 @@ PROJECTS_DIRNAME = "projects"
 SESSIONS_DIRNAME = "sessions"
 INDEX_FILENAME = "sessions-index.json"
 FAVOURITES_FILENAME = "jupyterlab_claude_code_extension.json"
+# A bridged session counts as remote-controlled only if it was active within
+# this window. Claude leaves ``bridgeSessionId`` set in the pid file after the
+# bridge disconnects and the interactive process keeps running, so a live pid
+# with a bridge id is not enough (DEF-8). There is no idle heartbeat - the pid
+# file is rewritten only on a busy/idle status transition, which fires on every
+# turn whether local or remote - so ``updatedAt`` freshness is the only signal
+# that the bridge is actually being driven now.
+REMOTE_CONTROL_FRESH_MS = 3_600_000  # 1 hour
 # Sidecar in a project dir holding the session id a "switch" pinned as the
 # project's current conversation. A dotfile so claude's own ``*.jsonl`` glob
 # ignores it. See ``switch_branch`` / ``_resolve_latest``.
@@ -74,7 +83,9 @@ def session_state_by_cwd(claude_root: Path) -> dict[str, dict]:
       * ``updated_at`` - ms-epoch of last update
       * ``name`` - the session ``name`` from that record (may be ``None``)
       * ``remote_control`` - True iff the record is a live, bridged session
-        (non-null ``bridgeSessionId``); a plain live claude is not remote control
+        (non-null ``bridgeSessionId``) that was active within the last
+        ``REMOTE_CONTROL_FRESH_MS``; a plain live claude, or a bridged session
+        gone stale, is not remote control
 
     When multiple ``<pid>.json`` files exist for the same cwd, the one with
     the highest ``updatedAt`` wins - so the most recently active session's
@@ -85,6 +96,7 @@ def session_state_by_cwd(claude_root: Path) -> dict[str, dict]:
     if not sessions_dir.is_dir():
         return by_cwd
 
+    now_ms = int(time.time() * 1000)
     for entry in sessions_dir.glob("*.json"):
         data = _load_json(entry)
         if not isinstance(data, dict):
@@ -103,9 +115,12 @@ def session_state_by_cwd(claude_root: Path) -> dict[str, dict]:
         # Claude writes a sessions/<pid>.json for EVERY interactive session; the
         # remote-control ("bridge") link is signalled by a non-null
         # ``bridgeSessionId``. A live pid alone does NOT mean remote control
-        # (DEF-7) - require both a live process and an active bridge.
+        # (DEF-7). The bridge id also persists after the bridge disconnects
+        # while the process keeps running, so require the bridged session to be
+        # fresh too (DEF-8) - active within REMOTE_CONTROL_FRESH_MS.
         bridge = data.get("bridgeSessionId")
-        remote_control = bool(live and isinstance(bridge, str) and bridge)
+        fresh = (now_ms - updated_at) <= REMOTE_CONTROL_FRESH_MS
+        remote_control = bool(live and isinstance(bridge, str) and bridge and fresh)
         by_cwd[cwd] = {
             "live_pid": pid if live else None,
             "session_id": sid,

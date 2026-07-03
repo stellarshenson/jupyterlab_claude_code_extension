@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.41] - 2026-07-03
+
+### Fixed
+
+- The green "remote control active" indicator no longer stays lit for a bridged session that has gone idle - it now requires the session to have been active within the last hour, not just to carry a bridge id. Claude leaves the bridge id set on a session after remote control ends and the process keeps running, so a session last active many days ago used to falsely show the indicator (DEF-8)
+
 ## [1.2.40] - 2026-07-01
 
 ### Fixed

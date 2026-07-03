@@ -11,6 +11,7 @@
 - [DEF-5: Switched branch reverts to the most-active conversation on refresh](#def-5-switched-branch-reverts-to-the-most-active-conversation-on-refresh) - fixed
 - [DEF-6: Created branch appears but is not made the row's current conversation](#def-6-created-branch-appears-but-is-not-made-the-rows-current-conversation) - fixed
 - [DEF-7: Panel shows "remote control active" for a session that is not remote-controlled](#def-7-panel-shows-remote-control-active-for-a-session-that-is-not-remote-controlled) - fixed
+- [DEF-8: "remote control active" stays lit for a bridged session gone stale](#def-8-remote-control-active-stays-lit-for-a-bridged-session-gone-stale) - fixed
 
 ### DEF-1: Branch name not applied at launch, false "use /rename" warning
 
@@ -57,3 +58,10 @@ HIGH - lands the user in the wrong conversation.
   - 2026-07-01 reported: "/home/lab/workspace/delaval/cognitive-platform/ai-assistant shows 'remote control active' - green light, while it is not"
   - 2026-07-01 root-caused: the winning record for the cwd, `~/.claude/sessions/14254.json`, has `bridgeSessionId: null` (a live `claude --resume`, status idle) yet lit the row; genuinely-bridged sessions carry `bridgeSessionId: session_...` (e.g. this session's `15779.json`), so pid-liveness overcounted remote control
   - 2026-07-01 fixed: `remote_control` requires a live pid AND a non-null `bridgeSessionId`; the DEF-7 case (live claude, bridge null) reads False; pytest 102 green
+
+### DEF-8: "remote control active" stays lit for a bridged session gone stale
+
+- [x] the panel lights the green "remote control active" indicator for a bridged session that is no longer under remote control (e.g. `/home/lab/workspace/private/jupyterlab/jupyterlab_advanced_image_viewer_extension`, last active 17 days ago); cause: claude leaves `bridgeSessionId` set in `~/.claude/sessions/<pid>.json` after the bridge disconnects while the interactive process keeps running, so the DEF-7 gate (live pid AND non-null `bridgeSessionId`) still passes a stale zombie; there is no idle heartbeat - the pid file is rewritten only on a busy/idle status transition, which fires on every turn whether local or remote - so `updatedAt` freshness is the only signal the bridge is being driven now; fix: `session_state_by_cwd` also requires the record to be fresh, active within `REMOTE_CONTROL_FRESH_MS` (1 hour); `jupyterlab_claude_code_extension/sessions.py`
+  - 2026-07-03 reported: "jupyterlab_advanced_image_viewer_extension appears to have remote control even if it was not active"
+  - 2026-07-03 root-caused: the winning record `~/.claude/sessions/25599.json` is alive but 404h stale with a leftover `bridgeSessionId`; `file mtime == updatedAt` for every session confirms no idle heartbeat, so bridged-ness alone is not liveness; the bridged flag persists across pids and days
+  - 2026-07-03 fixed: `remote_control` requires live pid AND non-null `bridgeSessionId` AND `updatedAt` within 1h; reproduced the zombie-only state reads False, a genuinely fresh busy bridge reads True; pytest 102 green

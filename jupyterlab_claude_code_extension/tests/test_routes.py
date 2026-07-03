@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -136,31 +137,45 @@ def test_list_sessions_marks_favourites(fake_claude: Path) -> None:
 
 
 def test_remote_control_requires_live_bridged_session(fake_claude: Path) -> None:
-    """remote_control is True only for a live, bridged (remote-controllable)
-    session. Claude writes a sessions/<pid>.json for EVERY interactive session;
-    the remote-control link is signalled by a non-null bridgeSessionId, so a
-    plain live claude (bridge null) must NOT light the indicator (DEF-7)."""
+    """remote_control is True only for a live, bridged session that is fresh.
+    Claude writes a sessions/<pid>.json for EVERY interactive session; the
+    remote-control link is a non-null bridgeSessionId, so a plain live claude
+    (bridge null) must NOT light it (DEF-7). The bridge id also persists after
+    the bridge disconnects while the process keeps running, so a bridged session
+    stale beyond REMOTE_CONTROL_FRESH_MS must NOT light it either (DEF-8)."""
+    now_ms = int(time.time() * 1000)
+    stale_ms = now_ms - sessions_mod.REMOTE_CONTROL_FRESH_MS - 60_000
     sessions_dir = fake_claude / "sessions"
     sessions_dir.mkdir()
-    # projA: live (pid 1 = init, always alive on POSIX) AND bridged -> active
+    # projA: live (pid 1 = init, always alive on POSIX), bridged AND fresh -> active
     (sessions_dir / "1.json").write_text(json.dumps({
-        "pid": 1, "sessionId": "x", "cwd": "/home/user/projA", "updatedAt": 1,
+        "pid": 1, "sessionId": "x", "cwd": "/home/user/projA", "updatedAt": now_ms,
         "bridgeSessionId": "session_abc",
     }))
     # projB: live but NOT bridged -> the DEF-7 false-positive case, must be False
     (sessions_dir / "2.json").write_text(json.dumps({
-        "pid": 1, "sessionId": "y", "cwd": "/home/user/projB", "updatedAt": 1,
+        "pid": 1, "sessionId": "y", "cwd": "/home/user/projB", "updatedAt": now_ms,
         "bridgeSessionId": None,
     }))
     # projC: bridged but the process is dead -> not controllable
     (sessions_dir / "9999999.json").write_text(json.dumps({
-        "pid": 9_999_999, "sessionId": "z", "cwd": "/home/user/projC", "updatedAt": 1,
+        "pid": 9_999_999, "sessionId": "z", "cwd": "/home/user/projC", "updatedAt": now_ms,
         "bridgeSessionId": "session_def",
+    }))
+    # projD: live and bridged but STALE (bridge id left over from a past bridge,
+    # process still running) -> the DEF-8 false-positive case, must be False
+    (sessions_dir / "3.json").write_text(json.dumps({
+        "pid": 1, "sessionId": "w", "cwd": "/home/user/projD", "updatedAt": stale_ms,
+        "bridgeSessionId": "session_ghi",
     }))
     rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
     assert rows["/home/user/projA"]["remote_control"] is True
     assert rows["/home/user/projB"]["remote_control"] is False
     assert rows["/home/user/projC"]["remote_control"] is False
+    # projD has no project row (list_sessions builds rows from the projects
+    # index), so assert the stale-bridge gate directly on the cwd-state map.
+    state = sessions_mod.session_state_by_cwd(fake_claude)
+    assert state["/home/user/projD"]["remote_control"] is False
 
 
 def test_pid_file_name_is_honoured_as_the_row_label(
