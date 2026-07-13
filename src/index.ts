@@ -7,6 +7,7 @@ import {
 import { IDefaultFileBrowser } from '@jupyterlab/filebrowser';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
 import { ITerminalTracker } from '@jupyterlab/terminal';
+import { IColourfulTabs } from 'jupyterlab_colourful_tab_extension';
 
 import { requestAPI } from './request';
 import { IStatusResponse } from './types';
@@ -25,7 +26,8 @@ const plugin: JupyterFrontEndPlugin<void> = {
     ILayoutRestorer,
     ISettingRegistry,
     ITerminalTracker,
-    IDefaultFileBrowser
+    IDefaultFileBrowser,
+    IColourfulTabs
   ],
   activate: async (
     app: JupyterFrontEnd,
@@ -33,7 +35,8 @@ const plugin: JupyterFrontEndPlugin<void> = {
     restorer: ILayoutRestorer | null,
     settingRegistry: ISettingRegistry | null,
     terminalTracker: ITerminalTracker | null,
-    fileBrowser: IDefaultFileBrowser | null
+    fileBrowser: IDefaultFileBrowser | null,
+    colourfulTabs: IColourfulTabs | null
   ) => {
     const settings = app.serviceManager.serverSettings;
 
@@ -59,7 +62,8 @@ const plugin: JupyterFrontEndPlugin<void> = {
       app,
       status.root_dir || '',
       terminalTracker,
-      fileBrowser
+      fileBrowser,
+      colourfulTabs
     );
 
     // Read the sidebar setting before docking so we add the widget to the

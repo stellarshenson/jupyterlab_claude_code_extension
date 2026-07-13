@@ -291,6 +291,38 @@ def test_scan_jsonl_for_custom_title_reads_tail_of_large_file(
     assert sessions_mod._scan_jsonl_for_custom_title(jsonl) == "new"
 
 
+def test_scan_jsonl_for_agent_color_reads_tail_of_large_file(
+    tmp_path: Path,
+) -> None:
+    """The scanner reads only the file tail; the last agent-color in range wins."""
+    jsonl = tmp_path / "s.jsonl"
+    filler = json.dumps({"type": "noise", "data": "x" * 1000})
+    lines = [filler] * 200
+    lines.append('{"type": "agent-color", "agentColor": "green"}')
+    lines.append(filler)
+    lines.append('{"type": "agent-color", "agentColor": "blue"}')
+    jsonl.write_text("\n".join(lines) + "\n")
+    assert sessions_mod._scan_jsonl_for_agent_color(jsonl) == "blue"
+
+
+def test_agent_color_in_jsonl_surfaces_as_row_color(fake_claude: Path) -> None:
+    """`/color` writes an ``agent-color`` record into the session JSONL; the row
+    exposes it as ``color`` (lowercased) for the terminal-tab tint."""
+    a = fake_claude / "projects" / "-home-user-projA"
+    (a / "aaaa-1111.jsonl").write_text(
+        '{"cwd": "/home/user/projA"}\n'
+        '{"type": "agent-color", "agentColor": "Blue", "sessionId": "aaaa-1111"}\n'
+    )
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/projA"]["color"] == "blue"
+
+
+def test_row_color_is_none_without_agent_color(fake_claude: Path) -> None:
+    """A session that never set a colour reports ``color`` None, not a class."""
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/projC"]["color"] is None
+
+
 # ---------------------------------------------------------------------------
 # Branch switching (list_branches / switch_branch)
 # ---------------------------------------------------------------------------

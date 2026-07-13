@@ -14,6 +14,9 @@ export interface ISession {
   remote_control: boolean;
   favourite: boolean;
   extra_sessions: number;
+  /** Claude session colour from `/color` or auto-assignment (e.g. "blue"), or
+   * null when the session carries none. Drives the terminal tab tint. */
+  color: string | null;
 }
 
 export interface ISessionsListResponse {

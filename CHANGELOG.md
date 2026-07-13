@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.42] - 2026-07-13
+
+### Added
+
+- Each Claude session's colour (set with `/color`, or auto-assigned) now tints its terminal tab in JupyterLab, so open sessions are easy to tell apart at a glance. The colour is read from the session and applied to the tab automatically. This needs the companion `jupyterlab_colourful_tab_extension` (1.0.19 or later), which provides the tab-colouring API
+
 ## [1.2.41] - 2026-07-03
 
 ### Fixed

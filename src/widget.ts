@@ -9,6 +9,7 @@ import {
 import { ServerConnection } from '@jupyterlab/services';
 import { IDefaultFileBrowser } from '@jupyterlab/filebrowser';
 import { ITerminalTracker } from '@jupyterlab/terminal';
+import { IColourfulTabs } from 'jupyterlab_colourful_tab_extension';
 import { copyIcon, folderIcon, terminalIcon } from '@jupyterlab/ui-components';
 import { CommandRegistry } from '@lumino/commands';
 import { UUID } from '@lumino/coreutils';
@@ -53,6 +54,23 @@ type SectionKey = 'favourites' | 'recent' | 'all';
 export type PresentationMode = 'name' | 'path';
 
 const DEFAULT_PRESENTATION_MODE: PresentationMode = 'name';
+
+// Claude's per-session colour (set by `/color`, or auto-assigned for
+// multi-session use) maps to a jupyterlab_colourful_tab_extension colour id.
+// That extension owns the tab-tint CSS and the setColour API; we only feed it
+// the colour. An absent or unrecognised colour resolves to null (clear tint).
+const CLAUDE_TAB_COLOUR_ID: Record<string, string> = {
+  red: 'rose',
+  orange: 'peach',
+  yellow: 'lemon',
+  green: 'mint',
+  blue: 'sky',
+  purple: 'lavender'
+};
+
+function claudeTabColourId(color: string | null | undefined): string | null {
+  return (color && CLAUDE_TAB_COLOUR_ID[color]) || null;
+}
 
 const SECTION_LABELS: Record<SectionKey, string> = {
   favourites: 'Favorites',
@@ -119,7 +137,8 @@ export class ClaudeCodeSessionsWidget extends Widget {
     app: JupyterFrontEnd,
     rootDir: string,
     terminalTracker: ITerminalTracker | null = null,
-    fileBrowser: IDefaultFileBrowser | null = null
+    fileBrowser: IDefaultFileBrowser | null = null,
+    colourfulTabs: IColourfulTabs | null = null
   ) {
     super();
     this._app = app;
@@ -127,6 +146,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._rootDir = rootDir.replace(/\/+$/, '');
     this._terminalTracker = terminalTracker;
     this._fileBrowser = fileBrowser;
+    this._colourfulTabs = colourfulTabs;
 
     this.id = 'jupyterlab-claude-code-extension';
     this.title.icon = claudeIcon;
@@ -408,6 +428,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
     );
     this._sessions = data.sessions ?? [];
     this._render();
+    this._reconcileTerminalColours();
   }
 
   private async _toggleFavourite(session: ISession): Promise<void> {
@@ -759,6 +780,40 @@ export class ClaudeCodeSessionsWidget extends Widget {
       } catch (_err) {
         /* terminal may have been disposed in the meantime - ignore */
       }
+    });
+  }
+
+  /** Tint a terminal's dock tab with the colour of the Claude session it runs,
+   * delegating to jupyterlab_colourful_tab_extension's `setColour` API so that
+   * extension owns the tab CSS and colour vocabulary. A no-op when the
+   * colourful-tab extension is not installed (the token is optional). An
+   * absent/unknown colour clears the tint. */
+  private _applyTerminalColour(
+    widget: any,
+    color: string | null | undefined
+  ): void {
+    if (!this._colourfulTabs || !widget || widget.isDisposed) {
+      return;
+    }
+    this._colourfulTabs.setColour(widget, claudeTabColourId(color));
+  }
+
+  /** Re-tint every tracked terminal tab from the freshest session colours.
+   * Runs after each fetch (launch refresh + the 30s poll), so a `/color`
+   * change shows on the next tick. Matches on project AND conversation so a
+   * tab only takes the colour of the exact session it runs; a terminal
+   * running a branch other than the project's representative row stays
+   * untinted rather than borrowing a sibling's colour. */
+  private _reconcileTerminalColours(): void {
+    const sessions = this._sessions ?? [];
+    this._terminalsByPath.forEach((entry, projectPath) => {
+      if (!entry.widget || entry.widget.isDisposed) {
+        return;
+      }
+      const match = sessions.find(
+        s => s.project_path === projectPath && s.session_id === entry.sessionId
+      );
+      this._applyTerminalColour(entry.widget, match?.color ?? null);
     });
   }
 
@@ -2205,6 +2260,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private readonly _removingPaths: Set<string> = new Set();
   private readonly _terminalTracker: ITerminalTracker | null;
   private readonly _fileBrowser: IDefaultFileBrowser | null;
+  private readonly _colourfulTabs: IColourfulTabs | null;
   // Microcache of the most-recent terminal per project, tagged with the
   // conversation it is running so reuse can tell a project's branches apart.
   private readonly _terminalsByPath: Map<

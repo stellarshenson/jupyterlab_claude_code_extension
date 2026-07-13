@@ -324,6 +324,7 @@ def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
     sid = chosen.stem
     fs_mtime = int(chosen.stat().st_mtime * 1000)
     custom_title = _scan_jsonl_for_custom_title(chosen)
+    agent_color = _scan_jsonl_for_agent_color(chosen)
 
     indexed: dict | None = None
     if isinstance(index, dict):
@@ -338,6 +339,7 @@ def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
         if chosen_cwd:
             latest["projectPath"] = chosen_cwd
         latest["customTitle"] = custom_title
+        latest["agentColor"] = agent_color
         return latest
 
     return {
@@ -352,6 +354,7 @@ def _resolve_latest(project_dir: Path, index: dict | None) -> dict | None:
         "gitBranch": None,
         "projectPath": chosen_cwd,
         "customTitle": custom_title,
+        "agentColor": agent_color,
     }
 
 
@@ -440,6 +443,44 @@ def _scan_jsonl_for_custom_title(path: Path) -> str | None:
         title = record.get("customTitle")
         if isinstance(title, str) and title.strip():
             latest = title
+    return latest
+
+
+def _scan_jsonl_for_agent_color(path: Path) -> str | None:
+    """Return the last ``agentColor`` recorded in the tail of ``path``.
+
+    ``/color`` writes ``{"type": "agent-color", "agentColor": ...}`` records to
+    the session JSONL, and Claude re-appends the record near the end of the
+    file on updates - auto-assigned multi-session colours land there too, so a
+    session that never ran ``/color`` still carries one. The last such record
+    is the session's current colour. Measured across sessions the newest record
+    sits within ~14 KiB of EOF, well inside the shared tail window, so the
+    colour is read without scanning the whole (often tens-of-MB) transcript.
+    The name is returned verbatim (lowercased); the frontend maps known names
+    to tab classes and ignores any it does not recognise.
+    """
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as fh:
+            if size > _JSONL_CWD_TAIL_BYTES:
+                fh.seek(-_JSONL_CWD_TAIL_BYTES, os.SEEK_END)
+                fh.readline()  # discard the partial line at the seek point
+            chunk = fh.read()
+    except OSError:
+        return None
+    latest: str | None = None
+    for raw_line in chunk.splitlines():
+        if b'"agent-color"' not in raw_line:
+            continue
+        try:
+            record = json.loads(raw_line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if not isinstance(record, dict) or record.get("type") != "agent-color":
+            continue
+        color = record.get("agentColor")
+        if isinstance(color, str) and color.strip():
+            latest = color.strip().lower()
     return latest
 
 
@@ -571,7 +612,9 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
     ``name``, ``name_source``, ``summary``, ``first_prompt``, ``message_count``,
     ``created``, ``modified``, ``file_mtime``, ``git_branch``,
     ``remote_control``, ``favourite``, ``extra_sessions`` (count of parallel
-    session JSONLs in the folder beyond the main one).
+    session JSONLs in the folder beyond the main one), ``color`` (the Claude
+    session colour from ``/color`` or auto-assignment, e.g. ``"blue"``, or
+    None).
 
     ``name`` is the session name Claude records for the most recently active
     session in that folder (``name_source = "session"``) when one exists,
@@ -659,6 +702,7 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
             "favourite": project_path in favourites,
             "name_source": name_source,
             "extra_sessions": extra_sessions,
+            "color": latest.get("agentColor"),
         })
 
     # Deduplicate by project_path: two encoded folders can resolve to the
