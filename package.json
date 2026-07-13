@@ -1,6 +1,6 @@
 {
     "name": "jupyterlab_claude_code_extension",
-    "version": "1.2.41",
+    "version": "1.2.42",
     "description": "Browse, resume, and manage your Claude Code CLI sessions from a JupyterLab side panel. One click reactivates the right terminal - no duplicate tabs, live remote-control indicator, and favourites for the projects you keep coming back to.",
     "keywords": [
         "jupyter",
@@ -64,7 +64,8 @@
         "@jupyterlab/terminal": "^4.0.0",
         "@jupyterlab/ui-components": "^4.0.0",
         "@lumino/commands": "^2.0.0",
-        "@lumino/widgets": "^2.0.0"
+        "@lumino/widgets": "^2.0.0",
+        "jupyterlab_colourful_tab_extension": "^1.0.19"
     },
     "devDependencies": {
         "@jupyterlab/builder": "^4.0.0",
@@ -125,7 +126,13 @@
         },
         "extension": true,
         "schemaDir": "schema",
-        "outputDir": "jupyterlab_claude_code_extension/labextension"
+        "outputDir": "jupyterlab_claude_code_extension/labextension",
+        "sharedPackages": {
+            "jupyterlab_colourful_tab_extension": {
+                "bundled": false,
+                "singleton": true
+            }
+        }
     },
     "eslintIgnore": [
         "node_modules",
