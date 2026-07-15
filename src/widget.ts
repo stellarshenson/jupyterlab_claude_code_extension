@@ -428,7 +428,8 @@ export class ClaudeCodeSessionsWidget extends Widget {
     );
     this._sessions = data.sessions ?? [];
     this._render();
-    this._reconcileTerminalColours();
+    // Best-effort tab tinting; never let a colour failure break the fetch.
+    this._reconcileTerminalColours().catch(() => undefined);
   }
 
   private async _toggleFavourite(session: ISession): Promise<void> {
@@ -798,23 +799,106 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._colourfulTabs.setColour(widget, claudeTabColourId(color));
   }
 
-  /** Re-tint every tracked terminal tab from the freshest session colours.
-   * Runs after each fetch (launch refresh + the 30s poll), so a `/color`
-   * change shows on the next tick. Matches on project AND conversation so a
-   * tab only takes the colour of the exact session it runs; a terminal
-   * running a branch other than the project's representative row stays
-   * untinted rather than borrowing a sibling's colour. */
-  private _reconcileTerminalColours(): void {
+  /** Re-tint EVERY open Claude terminal tab from the freshest session colours,
+   * whether the plugin launched it or the user opened it themselves. Walks
+   * JupyterLab's terminal tracker (the registry of all open terminals) rather
+   * than only the plugin's own launch cache, and re-resolves each terminal's
+   * Claude conversation on every pass via the ``terminal-cwd`` probe - so a tab
+   * whose terminal has since started (or switched) a Claude conversation is
+   * re-tinted correctly rather than pinned to a stale identity. The probe is a
+   * few /proc reads per terminal; runs after each fetch (launch refresh + the
+   * 30s poll), which is already gated to skip while a context menu is open. */
+  private async _reconcileTerminalColours(): Promise<void> {
+    if (!this._colourfulTabs || !this._terminalTracker) {
+      return;
+    }
     const sessions = this._sessions ?? [];
-    this._terminalsByPath.forEach((entry, projectPath) => {
-      if (!entry.widget || entry.widget.isDisposed) {
-        return;
+    const widgets: any[] = [];
+    this._terminalTracker.forEach((widget: any) => {
+      if (widget && !widget.isDisposed) {
+        widgets.push(widget);
       }
-      const match = sessions.find(
-        s => s.project_path === projectPath && s.session_id === entry.sessionId
-      );
-      this._applyTerminalColour(entry.widget, match?.color ?? null);
     });
+    await Promise.all(
+      widgets.map(async widget => {
+        const info = await this._interrogateTerminal(widget);
+        if (!info || !info.hasClaude || widget.isDisposed) {
+          return;
+        }
+        this._applyTerminalColour(
+          widget,
+          this._colourForTerminal(info, sessions)
+        );
+      })
+    );
+  }
+
+  /** Resolve a terminal's Claude identity: does it run Claude, which
+   * conversation id, and its cwd(s). Panel-launched terminals are already known
+   * (their conversation was confirmed at launch), so those skip the backend
+   * probe; every other terminal is probed once via ``terminal-cwd``. Returns
+   * ``null`` when the terminal has no session name yet or the probe fails. */
+  private async _interrogateTerminal(widget: any): Promise<{
+    hasClaude: boolean;
+    sessionId: string | null;
+    cwds: string[];
+  } | null> {
+    for (const entry of this._terminalsByPath.values()) {
+      if (entry.widget === widget && entry.sessionId) {
+        return { hasClaude: true, sessionId: entry.sessionId, cwds: [] };
+      }
+    }
+    const sessName: string | undefined = widget?.content?.session?.name;
+    if (typeof sessName !== 'string' || !sessName) {
+      return null;
+    }
+    try {
+      const data = await requestAPI<ITerminalCwdResponse>(
+        `terminal-cwd/${encodeURIComponent(sessName)}`,
+        this._serverSettings
+      );
+      return {
+        hasClaude: !!data?.has_claude,
+        sessionId: data?.session_id ?? null,
+        cwds: Array.isArray(data?.cwds) ? data.cwds : []
+      };
+    } catch (_err) {
+      // Backend may 404 for a terminal that vanished between enumeration and
+      // probe - treat as unresolved and retry on the next poll.
+      return null;
+    }
+  }
+
+  /** Pick a terminal's tab colour from the session list. When the terminal runs
+   * a known conversation (its argv carried a ``--resume`` / ``--session-id``),
+   * match on that id ONLY: it takes the colour of the exact conversation, or -
+   * when that conversation is not the project's representative row - clears,
+   * rather than borrowing a sibling branch's colour. The cwd fallback is used
+   * ONLY for a terminal with no conversation id (a bare ``claude`` / ``-c``),
+   * matching the project the terminal is cwd'd in and preferring the longest
+   * matching path so a nested project wins over its parent. Returns null (clear)
+   * when no row matches or the matched row has no colour. */
+  private _colourForTerminal(
+    info: { sessionId: string | null; cwds: string[] },
+    sessions: ISession[]
+  ): string | null {
+    if (info.sessionId) {
+      const bySession = sessions.find(s => s.session_id === info.sessionId);
+      return bySession ? (bySession.color ?? null) : null;
+    }
+    let best: ISession | undefined;
+    let bestLen = -1;
+    for (const raw of info.cwds) {
+      const cwd = raw.replace(/\/+$/, '');
+      for (const s of sessions) {
+        const p = s.project_path.replace(/\/+$/, '');
+        if ((cwd === p || cwd.startsWith(p + '/')) && p.length > bestLen) {
+          best = s;
+          bestLen = p.length;
+        }
+      }
+    }
+    return best ? (best.color ?? null) : null;
   }
 
   private async _findTerminalForCwd(

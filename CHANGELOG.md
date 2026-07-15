@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.43] - 2026-07-15
+
+### Fixed
+
+- Terminal tabs for Claude sessions opened outside the panel now take their session colour too. Previously only sessions launched or resumed through the panel were tinted, so a terminal you opened yourself stayed uncoloured even though the panel already knew its colour. The colour is now applied to every open Claude terminal and kept in sync on each refresh (DEF-10)
+
 ## [1.2.42] - 2026-07-13
 
 ### Added

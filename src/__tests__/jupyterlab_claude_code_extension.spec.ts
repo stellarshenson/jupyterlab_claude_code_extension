@@ -23,6 +23,7 @@ const session = (over: Partial<ISession> = {}): ISession => ({
   remote_control: false,
   favourite: false,
   extra_sessions: 0,
+  color: null,
   ...over
 });
 
