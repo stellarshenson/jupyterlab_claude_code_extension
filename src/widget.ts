@@ -990,9 +990,11 @@ export class ClaudeCodeSessionsWidget extends Widget {
       body,
       buttons: []
     });
-    // launch() returns a Promise we don't await - we resolve programmatically
-    // when the spawn completes (or errors).
-    void dialog.launch();
+    // launch() returns a Promise we don't await - the caller dismisses this
+    // dialog with .dispose() when the spawn completes. Disposing an open Lumino
+    // dialog rejects that promise with `undefined`, so catch it here to keep a
+    // benign teardown from surfacing as an unhandled promise rejection.
+    dialog.launch().catch(() => undefined);
     return dialog;
   }
 
@@ -1440,7 +1442,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
           );
           return;
         }
-        void this._app.commands.execute('terminal:create-new', { cwd: rel });
+        this._app.commands
+          .execute('terminal:create-new', { cwd: rel })
+          .catch(err => this._showError(err));
       }
     });
 
@@ -1463,9 +1467,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
         }
         // JL's built-in command navigates the default file browser to the
         // path and reveals the browser panel.
-        void this._app.commands.execute('filebrowser:go-to-path', {
-          path: rel
-        });
+        this._app.commands
+          .execute('filebrowser:go-to-path', { path: rel })
+          .catch(err => this._showError(err));
       }
     });
 
@@ -2093,7 +2097,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
     render();
     updateControls();
 
-    void dialog.launch();
+    // dialog.dispose() (on open/switch) rejects this promise with `undefined`;
+    // catch it so the teardown never surfaces as an unhandled promise rejection.
+    dialog.launch().catch(() => undefined);
     search.focus();
   }
 
@@ -2240,7 +2246,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
         { autoClose: 4000 }
       );
     } finally {
-      await this._fetch();
+      // Best-effort refresh - never let a transient fetch failure reject this
+      // fire-and-forget switch (its callers do not await it).
+      await this._fetch().catch(() => undefined);
     }
   }
 

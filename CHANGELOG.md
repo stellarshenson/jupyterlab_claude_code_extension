@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.44] - 2026-07-15
+
+### Fixed
+
+- The panel no longer spills harmless "Uncaught (in promise)" errors into the browser console. Opening a Claude terminal, or opening and switching branches, dismisses a short-lived dialog whose teardown JupyterLab reports as an unhandled rejection - those teardowns are now caught. A few background actions (switching a branch, opening a terminal or the file browser at a session's folder) also route any failure through the panel's own error handler instead of surfacing as console spill
+
 ## [1.2.43] - 2026-07-15
 
 ### Fixed
