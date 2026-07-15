@@ -1406,8 +1406,9 @@ async def test_delete_branches_endpoint_rejects_bad_body(
 
 
 # --------------------------------------------------------------------------
-# _parse_resume_id / _claude_resume_id - the conversation a claude terminal is
-# running, so terminal reuse can tell a project's branches apart.
+# _parse_resume_id / _session_id_from_pidfile / _claude_session_id - the
+# conversation a claude terminal is running, so terminal reuse can tell a
+# project's branches apart and can identify a terminal the user opened.
 # --------------------------------------------------------------------------
 
 
@@ -1451,10 +1452,26 @@ def test_parse_resume_id_does_not_swallow_a_following_flag() -> None:
     assert routes_mod._parse_resume_id(b"claude\x00--resume\x00--verbose\x00") is None
 
 
-def test_claude_resume_id_walks_tree_to_the_claude_process(monkeypatch) -> None:
-    # The pty root is a shell (init waiter); claude is a child. The walk must
-    # find the claude pid (comm == "claude") and return its resume id, skipping
-    # the shell. The /proc cmdline read is stubbed so this is deterministic.
+def test_session_id_from_pidfile_reads_session_id(tmp_path, monkeypatch) -> None:
+    # claude writes ~/.claude/sessions/<pid>.json with the running sessionId
+    # regardless of launch flags; the helper reads it for a given pid.
+    monkeypatch.setattr(sessions_mod, "claude_dir", lambda: tmp_path)
+    sess_dir = tmp_path / sessions_mod.SESSIONS_DIRNAME
+    sess_dir.mkdir()
+    (sess_dir / "4242.json").write_text(
+        json.dumps({"sessionId": "real-sid", "cwd": "/x"})
+    )
+    assert routes_mod._session_id_from_pidfile(4242) == "real-sid"
+    # Absent file / no id -> None.
+    assert routes_mod._session_id_from_pidfile(9999) is None
+    (sess_dir / "5555.json").write_text(json.dumps({"cwd": "/x"}))
+    assert routes_mod._session_id_from_pidfile(5555) is None
+
+
+def test_claude_session_id_prefers_pidfile_over_argv(monkeypatch) -> None:
+    # The pty root is a shell (init waiter); claude is a child. The walk finds
+    # the claude pid and takes its TRUE sessionId from the pid file even when
+    # argv also carries an id - the running session is authoritative.
     monkeypatch.setattr(
         routes_mod, "_process_children",
         lambda pid: [4242] if pid == 1000 else [],
@@ -1464,16 +1481,40 @@ def test_claude_resume_id_walks_tree_to_the_claude_process(monkeypatch) -> None:
         lambda pid: "claude" if pid == 4242 else "bash",
     )
     monkeypatch.setattr(
-        routes_mod, "_resume_id_from_cmdline",
-        lambda pid: "watched-id" if pid == 4242 else None,
+        routes_mod, "_session_id_from_pidfile",
+        lambda pid: "pidfile-sid" if pid == 4242 else None,
     )
-    assert routes_mod._claude_resume_id(1000) == "watched-id"
+    monkeypatch.setattr(
+        routes_mod, "_resume_id_from_cmdline",
+        lambda pid: "argv-sid" if pid == 4242 else None,
+    )
+    assert routes_mod._claude_session_id(1000) == "pidfile-sid"
 
 
-def test_claude_resume_id_none_when_no_claude_in_tree(monkeypatch) -> None:
+def test_claude_session_id_falls_back_to_argv_without_pidfile(monkeypatch) -> None:
+    # No pid file (older claude, or a race) -> the argv id is used. This is the
+    # panel-launched case where --resume / --session-id is in argv.
+    monkeypatch.setattr(
+        routes_mod, "_process_children",
+        lambda pid: [4242] if pid == 1000 else [],
+    )
+    monkeypatch.setattr(
+        routes_mod, "_process_comm",
+        lambda pid: "claude" if pid == 4242 else "bash",
+    )
+    monkeypatch.setattr(routes_mod, "_session_id_from_pidfile", lambda pid: None)
+    monkeypatch.setattr(
+        routes_mod, "_resume_id_from_cmdline",
+        lambda pid: "argv-sid" if pid == 4242 else None,
+    )
+    assert routes_mod._claude_session_id(1000) == "argv-sid"
+
+
+def test_claude_session_id_none_when_no_claude_in_tree(monkeypatch) -> None:
     monkeypatch.setattr(routes_mod, "_process_children", lambda pid: [])
     monkeypatch.setattr(routes_mod, "_process_comm", lambda pid: "bash")
-    assert routes_mod._claude_resume_id(1000) is None
+    monkeypatch.setattr(routes_mod, "_session_id_from_pidfile", lambda pid: None)
+    assert routes_mod._claude_session_id(1000) is None
 
 
 def test_resume_id_from_cmdline_reads_proc() -> None:

@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.45] - 2026-07-15
+
+### Fixed
+
+- Clicking a project row whose Claude session is already open in a terminal you started yourself (with `claude -c` or plain `claude`) now focuses that terminal instead of opening a second one. Previously the panel recognised only the terminals it had launched, so a session you opened yourself was not reused and a duplicate was spawned. The panel now reads each running terminal's real session id from Claude's own session file, so a terminal is reused however it was started (DEF-9)
+
 ## [1.2.44] - 2026-07-15
 
 ### Fixed

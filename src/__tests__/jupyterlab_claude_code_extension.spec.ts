@@ -522,13 +522,15 @@ describe('launch spinner dismiss contract', () => {
    * Contract for conversation-aware terminal reuse and the Open Branched
    * Conversation feature. Reuse must refuse to focus a terminal running a
    * DIFFERENT or UNKNOWN conversation (the switch-then-click bug, DEF-4): a
-   * terminal is reused only on a POSITIVE conversation-id match. Every
-   * extension launch carries an explicit id so its terminal is identifiable
-   * (resume -> --resume, new session / fork -> --session-id).
+   * terminal is reused only on a POSITIVE conversation-id match. The backend
+   * reads each terminal's true session id from the running claude's own
+   * `~/.claude/sessions/<pid>.json`, so a terminal the user opened with a bare
+   * `claude` / `-c` is identifiable too - reuse is not limited to extension
+   * launches that carry an id in argv.
    */
   describe('conversation-aware reuse + open-branch contract', () => {
     const findTerm = (widgetSrc.match(
-      /private async _findTerminalForCwd[\s\S]*?\n  \}/
+      /private async _findTerminalForSession[\s\S]*?\n  \}/
     ) ?? [''])[0];
     const doResume = (widgetSrc.match(
       /private async _doResumeInTerminal[\s\S]*?\n  \}/
@@ -553,19 +555,30 @@ describe('launch spinner dismiss contract', () => {
       expect(iface).toMatch(/session_id\?: string \| null/);
     });
 
-    it('_findTerminalForCwd takes the wanted id with no strict flag', () => {
+    it('_findTerminalForSession keys on the session id alone (no cwd param)', () => {
       expect(findTerm).toMatch(
-        /_findTerminalForCwd\(\s*projectPath: string,\s*wantedSessionId: string \| undefined\s*\)/
+        /_findTerminalForSession\(\s*wantedSessionId: string \| undefined\s*\)/
       );
+      // A missing wanted id short-circuits so null never matches null.
+      expect(findTerm).toMatch(
+        /if \(!this\._terminalTracker \|\| !wantedSessionId\)/
+      );
+      // Reuse is identity-only now - it must NOT gate on the terminal's cwd
+      // (a claude cd'd into a subdir, or a recreated project dir, must still
+      // be reused once its conversation is positively known).
+      expect(findTerm).not.toMatch(/cwds/);
+      expect(findTerm).not.toMatch(/=== target/);
     });
 
     it('reuse requires a positive conversation-id match (no lenient unknown reuse)', () => {
-      expect(findTerm).toMatch(/const runningId = data\.session_id \?\? null/);
-      // The ONLY reuse condition: a truthy wanted id equal to the observed
-      // id. A missing wanted id or an unknown (null) running id never matches,
-      // so a -c/--continue or bare-claude terminal is never reused (DEF-4).
       expect(findTerm).toMatch(
-        /if \(!wantedSessionId \|\| runningId !== wantedSessionId\) \{\s*continue;/
+        /const runningId = data\?\.session_id \?\? null/
+      );
+      // The ONLY reuse condition: the observed running id equals the wanted
+      // id. An unknown (null) running id never equals a truthy wanted id, so a
+      // terminal whose conversation cannot be read is never reused (DEF-4).
+      expect(findTerm).toMatch(
+        /if \(runningId === wantedSessionId\) \{\s*return \{ widget, runningId \};/
       );
       // The old lenient/strict machinery is gone.
       expect(findTerm).not.toMatch(/unknownConversation/);

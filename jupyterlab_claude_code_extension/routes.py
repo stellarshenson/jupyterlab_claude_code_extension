@@ -129,24 +129,54 @@ def _resume_id_from_cmdline(pid: int) -> str | None:
         return None
 
 
-def _claude_resume_id(root_pid: int) -> str | None:
-    """The conversation id the pty's claude is running, or None.
+def _session_id_from_pidfile(pid: int) -> str | None:
+    """The conversation id claude records for its own process in
+    ``~/.claude/sessions/<pid>.json``.
 
-    Walks the pty's process tree, finds the ``claude`` process and returns
-    its conversation id from argv - ``--session-id`` (a fork) or ``--resume``
-    (see ``_parse_resume_id``). None when no claude is found or it carries
-    neither flag (a fresh session launched without an explicit id). The
-    frontend uses this so terminal reuse can tell whether an open claude
-    terminal is running the SAME conversation the clicked row points at -
-    resuming a different branch must open a NEW terminal, not focus the old one.
+    claude writes this file for EVERY interactive session and stamps the
+    running conversation's ``sessionId`` in it whatever the launch flags were -
+    ``-c`` / ``--continue`` / a bare ``claude`` / ``--resume`` / a fork all
+    record it. It is therefore the robust source of a terminal's true
+    conversation: argv only carries an id for launches that were handed one
+    explicitly (every extension launch, but not a terminal the user opened
+    themselves). None when the file is absent or carries no id.
+    """
+    try:
+        path = (
+            sessions_mod.claude_dir()
+            / sessions_mod.SESSIONS_DIRNAME
+            / f"{pid}.json"
+        )
+        with open(path, "r") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    sid = data.get("sessionId")
+    return sid if isinstance(sid, str) and sid else None
+
+
+def _claude_session_id(root_pid: int) -> str | None:
+    """The conversation id the pty's claude is actually running, or None.
+
+    Walks the pty's process tree to the ``claude`` process and reads its true
+    ``sessionId`` from ``~/.claude/sessions/<pid>.json``, falling back to the
+    argv id (``--session-id`` / ``--resume``, see ``_parse_resume_id``) only
+    when the pid file is absent. Reading the running session rather than argv
+    is what makes terminal reuse robust for terminals the extension did not
+    launch: a bare ``claude`` or ``claude -c`` carries no id in argv but still
+    runs one concrete session that the pid file names, so the frontend can
+    positively identify it and focus it instead of spawning a duplicate. None
+    when no claude is found or it records no session.
     """
     queue: list[int] = [root_pid]
     while queue:
         pid = queue.pop(0)
         if _process_comm(pid) == "claude":
-            resume_id = _resume_id_from_cmdline(pid)
-            if resume_id:
-                return resume_id
+            session_id = _session_id_from_pidfile(pid) or _resume_id_from_cmdline(
+                pid
+            )
+            if session_id:
+                return session_id
         queue.extend(_process_children(pid))
     return None
 
@@ -431,10 +461,12 @@ class TerminalCwdHandler(APIHandler):
             return
         cwds = _terminal_cwds(ptyproc.pid)
         has_claude = _tree_has_claude(ptyproc.pid)
-        # The conversation id the running claude is resuming (None for a
-        # fresh, non-resumed session) so the frontend reuses a terminal only
-        # when it is running the SAME conversation as the clicked row.
-        session_id = _claude_resume_id(ptyproc.pid)
+        # The conversation the running claude is on, read from its own
+        # ~/.claude/sessions/<pid>.json - robust for -c / bare / user-opened
+        # terminals, not only extension launches that carry an argv id - so the
+        # frontend reuses a terminal only when it runs the clicked row's
+        # conversation. None when no claude is found or it records no session.
+        session_id = _claude_session_id(ptyproc.pid)
         self.finish(json.dumps({
             "terminal_name": terminal_name,
             "cwds": cwds,

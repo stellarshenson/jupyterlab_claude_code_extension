@@ -635,14 +635,11 @@ export class ClaudeCodeSessionsWidget extends Widget {
       }
 
       // 2. Walk every live terminal widget JL knows about.
-      const found = await this._findTerminalForCwd(
-        session.project_path,
-        session.session_id
-      );
+      const found = await this._findTerminalForSession(session.session_id);
       if (found) {
         // Tag the cache with the OBSERVED conversation - here it equals the
-        // wanted id (the gate in _findTerminalForCwd), so a later reuse trusts
-        // a confirmed conversation rather than a wish.
+        // wanted id (the gate in _findTerminalForSession), so a later reuse
+        // trusts a confirmed conversation rather than a wish.
         this._terminalsByPath.set(session.project_path, {
           widget: found.widget,
           sessionId: found.runningId ?? undefined
@@ -901,11 +898,22 @@ export class ClaudeCodeSessionsWidget extends Widget {
     return best ? (best.color ?? null) : null;
   }
 
-  private async _findTerminalForCwd(
-    projectPath: string,
+  /** Find an open terminal running the wanted conversation, or null.
+   *
+   * Matches on the conversation id ALONE. The backend reads each terminal's
+   * true session id from the running claude (`~/.claude/sessions/<pid>.json`),
+   * so a bare `claude` / `-c` the user opened is identified too, not only
+   * extension launches that carry an argv id. A session id is globally unique
+   * to one conversation, so a terminal running it IS the one to focus -
+   * regardless of its reported cwd (a claude that cd'd into a subdir, or whose
+   * project dir was recreated, must still be reused, not duplicated). Reuse
+   * stays strict on identity: a terminal whose running session cannot be read
+   * (no claude, or an unreadable id) reports null, which never equals a wanted
+   * id, so a DIFFERENT conversation is never focused by mistake (DEF-4). */
+  private async _findTerminalForSession(
     wantedSessionId: string | undefined
   ): Promise<{ widget: any; runningId: string | null } | null> {
-    if (!this._terminalTracker) {
+    if (!this._terminalTracker || !wantedSessionId) {
       return null;
     }
     const candidates: any[] = [];
@@ -914,7 +922,6 @@ export class ClaudeCodeSessionsWidget extends Widget {
         candidates.push(widget);
       }
     });
-    const target = projectPath.replace(/\/+$/, '');
     for (const widget of candidates) {
       const sessName: string | undefined = widget?.content?.session?.name;
       if (typeof sessName !== 'string' || !sessName) {
@@ -925,33 +932,13 @@ export class ClaudeCodeSessionsWidget extends Widget {
           `terminal-cwd/${encodeURIComponent(sessName)}`,
           this._serverSettings
         );
-        // Only reuse terminals that actually have claude running. Otherwise
-        // a plain bash opened at the project cwd would be matched and
-        // activated, swallowing the resume click without spawning claude.
-        if (!data?.has_claude) {
-          continue;
-        }
-        // Conversation gate: reuse ONLY a terminal we can positively confirm
-        // is running the wanted conversation. A terminal whose conversation
-        // is unknown (claude started with -c/--continue or a bare claude, so
-        // its argv carries no id) is never reused - it may be running a
-        // different conversation of this project (the switch-then-click bug).
-        // Extension launches always carry an explicit id, so an unknown
-        // terminal is necessarily foreign.
-        const runningId = data.session_id ?? null;
-        // A missing wanted id (undefined) or an unknown running id (null) can
-        // never be a positive match - guard so neither side's "absent" value
-        // is mistaken for equality and an unknown terminal slips through.
-        if (!wantedSessionId || runningId !== wantedSessionId) {
-          continue;
-        }
-        const cwds = Array.isArray(data?.cwds) ? data.cwds : [];
-        for (const cwd of cwds) {
-          if ((cwd || '').replace(/\/+$/, '') === target) {
-            // runningId equals the wanted id here (gated above), so the caller
-            // tags its cache with a confirmed conversation id.
-            return { widget, runningId };
-          }
+        // Positive identity match on the running conversation. The backend
+        // reports a session id only for a live claude, so a match implies
+        // has_claude - the id alone is the gate, and the terminal's cwd is
+        // irrelevant once its conversation is positively known.
+        const runningId = data?.session_id ?? null;
+        if (runningId === wantedSessionId) {
+          return { widget, runningId };
         }
       } catch (_err) {
         // Backend may report 404 for terminals that disappeared between
