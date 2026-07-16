@@ -1,6 +1,7 @@
 """Tornado API handlers for the Claude Code sessions extension."""
 from __future__ import annotations
 
+import glob
 import json
 import os
 import sys
@@ -178,6 +179,26 @@ def _claude_session_id(root_pid: int) -> str | None:
             if session_id:
                 return session_id
         queue.extend(_process_children(pid))
+    return None
+
+
+def _session_colour(session_id: str | None) -> str | None:
+    """Colour of conversation ``session_id``, read from its own JSONL.
+
+    Row colour is wrong source: row carries only the project's representative
+    conversation, and that flips to any newer JSONL (a daemon
+    ``--fork-session`` writes one), clearing the tint of a terminal running the
+    non-representative conversation (DEF-11). Escaped - the id is a file NAME,
+    never a glob pattern, so a metacharacter cannot match another conversation.
+    """
+    if not session_id:
+        return None
+    root = sessions_mod.claude_dir() / sessions_mod.PROJECTS_DIRNAME
+    try:
+        for path in root.glob(f"*/{glob.escape(session_id)}.jsonl"):
+            return sessions_mod._scan_jsonl_for_agent_color(path)
+    except OSError:
+        return None
     return None
 
 
@@ -472,6 +493,10 @@ class TerminalCwdHandler(APIHandler):
             "cwds": cwds,
             "has_claude": has_claude,
             "session_id": session_id,
+            # Colour of the conversation this terminal runs, from its own
+            # JSONL - the row carries only the representative, which flips
+            # to any newer JSONL (DEF-11).
+            "color": _session_colour(session_id),
         }))
 
 

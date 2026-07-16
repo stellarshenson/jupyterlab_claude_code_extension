@@ -1517,6 +1517,97 @@ def test_claude_session_id_none_when_no_claude_in_tree(monkeypatch) -> None:
     assert routes_mod._claude_session_id(1000) is None
 
 
+# _session_colour (DEF-11)
+
+
+def test_session_colour_reads_the_conversations_own_jsonl(
+    tmp_path, monkeypatch
+) -> None:
+    # A terminal's tint comes from the conversation it RUNS, not from the
+    # project's representative row. Two conversations in one project: the one
+    # the terminal runs is NOT the newest, yet keeps its own colour (DEF-11).
+    monkeypatch.setattr(sessions_mod, "claude_dir", lambda: tmp_path)
+    proj = tmp_path / sessions_mod.PROJECTS_DIRNAME / "-home-user-proj"
+    proj.mkdir(parents=True)
+    running = "aaaaaaaa-0000-0000-0000-000000000001"
+    fork = "bbbbbbbb-0000-0000-0000-000000000002"
+    (proj / f"{running}.jsonl").write_text(
+        json.dumps({"type": "agent-color", "agentColor": "orange"}) + "\n"
+    )
+    # The daemon fork is newer, so it wins the row - it must NOT drive the
+    # colour of a terminal running the other conversation.
+    (proj / f"{fork}.jsonl").write_text(
+        json.dumps({"type": "agent-color", "agentColor": "green"}) + "\n"
+    )
+    assert routes_mod._session_colour(running) == "orange"
+    assert routes_mod._session_colour(fork) == "green"
+
+
+def test_session_colour_none_for_unknown_or_missing_id(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(sessions_mod, "claude_dir", lambda: tmp_path)
+    (tmp_path / sessions_mod.PROJECTS_DIRNAME).mkdir(parents=True)
+    assert routes_mod._session_colour(None) is None
+    assert routes_mod._session_colour("") is None
+    assert routes_mod._session_colour("cccccccc-0000-0000-0000-000000000003") is None
+
+
+def test_session_colour_treats_the_id_as_a_name_not_a_glob_pattern(
+    tmp_path, monkeypatch
+) -> None:
+    # The id is interpolated into a glob. A metacharacter must not match a
+    # different conversation and hand back its colour.
+    monkeypatch.setattr(sessions_mod, "claude_dir", lambda: tmp_path)
+    proj = tmp_path / sessions_mod.PROJECTS_DIRNAME / "-home-user-proj"
+    proj.mkdir(parents=True)
+    (proj / "dddddddd-0000-0000-0000-000000000004.jsonl").write_text(
+        json.dumps({"type": "agent-color", "agentColor": "red"}) + "\n"
+    )
+    assert routes_mod._session_colour("*") is None
+    assert routes_mod._session_colour("?" * 36) is None
+
+
+class _FakePty:
+    def __init__(self, pid: int) -> None:
+        self.pid = pid
+
+
+class _FakeTerminal:
+    def __init__(self, pid: int) -> None:
+        self.ptyproc = _FakePty(pid)
+
+
+async def test_terminal_cwd_endpoint_ships_the_running_conversations_colour(
+    jp_fetch, jp_serverapp, patched_claude_dir, monkeypatch
+) -> None:
+    # The regression that shipped (DEF-11) lived in the WIRE, not in
+    # _session_colour: unit-testing the helper proves the function, never that
+    # the handler sends it. Deleting the response's "color" key reproduces
+    # DEF-11 exactly, so this asserts the key arrives with the right value.
+    class _TM:
+        def get_terminal(self, name):
+            return _FakeTerminal(4242) if name == "t1" else None
+
+    jp_serverapp.web_app.settings["terminal_manager"] = _TM()
+    monkeypatch.setattr(routes_mod, "_terminal_cwds", lambda pid: ["/w/proj"])
+    monkeypatch.setattr(routes_mod, "_tree_has_claude", lambda pid: True)
+    monkeypatch.setattr(routes_mod, "_claude_session_id", lambda pid: "sid-running")
+    # Real _session_colour against a real JSONL - the whole chain, not a stub.
+    proj = patched_claude_dir / sessions_mod.PROJECTS_DIRNAME / "-w-proj"
+    proj.mkdir(parents=True)
+    (proj / "sid-running.jsonl").write_text(
+        json.dumps({"type": "agent-color", "agentColor": "orange"}) + "\n"
+    )
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "terminal-cwd", "t1"
+    )
+    assert response.code == 200
+    payload = json.loads(response.body)
+    assert payload["session_id"] == "sid-running"
+    assert payload["color"] == "orange"
+
+
 def test_resume_id_from_cmdline_reads_proc() -> None:
     # Spawn a real long-lived process carrying --resume in its argv and read
     # its id back from /proc. python3 -c ignores trailing args (so it stays

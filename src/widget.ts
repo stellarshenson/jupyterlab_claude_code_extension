@@ -17,6 +17,7 @@ import { Menu, Widget } from '@lumino/widgets';
 import { Message } from '@lumino/messaging';
 
 import { requestAPI } from './request';
+import { claudeTabColourId, colourForTerminal } from './colour';
 import {
   addIcon,
   branchIcon,
@@ -55,22 +56,8 @@ export type PresentationMode = 'name' | 'path';
 
 const DEFAULT_PRESENTATION_MODE: PresentationMode = 'name';
 
-// Claude's per-session colour (set by `/color`, or auto-assigned for
-// multi-session use) maps to a jupyterlab_colourful_tab_extension colour id.
-// That extension owns the tab-tint CSS and the setColour API; we only feed it
-// the colour. An absent or unrecognised colour resolves to null (clear tint).
-const CLAUDE_TAB_COLOUR_ID: Record<string, string> = {
-  red: 'rose',
-  orange: 'peach',
-  yellow: 'lemon',
-  green: 'mint',
-  blue: 'sky',
-  purple: 'lavender'
-};
-
-function claudeTabColourId(color: string | null | undefined): string | null {
-  return (color && CLAUDE_TAB_COLOUR_ID[color]) || null;
-}
+// Colour resolution lives in ./colour - pure, JupyterLab-free, and therefore
+// executable under jest (the tint regressed twice behind a green suite).
 
 const SECTION_LABELS: Record<SectionKey, string> = {
   favourites: 'Favorites',
@@ -122,6 +109,10 @@ interface ITerminalCwdResponse {
   // Conversation id the running claude is resuming, or null for a fresh
   // (non-resumed) session. Lets reuse tell branches of one project apart.
   session_id?: string | null;
+  // Colour of the conversation this terminal runs, from its own JSONL.
+  // Authoritative for the tint - the row carries only the representative
+  // conversation's colour (DEF-11).
+  color?: string | null;
 }
 
 // Drop any pre-v0.6.18 localStorage entries from previous schemes - they
@@ -822,29 +813,21 @@ export class ClaudeCodeSessionsWidget extends Widget {
         if (!info || !info.hasClaude || widget.isDisposed) {
           return;
         }
-        this._applyTerminalColour(
-          widget,
-          this._colourForTerminal(info, sessions)
-        );
+        this._applyTerminalColour(widget, colourForTerminal(info, sessions));
       })
     );
   }
 
-  /** Resolve a terminal's Claude identity: does it run Claude, which
-   * conversation id, and its cwd(s). Panel-launched terminals are already known
-   * (their conversation was confirmed at launch), so those skip the backend
-   * probe; every other terminal is probed once via ``terminal-cwd``. Returns
-   * ``null`` when the terminal has no session name yet or the probe fails. */
+  /** Probe a terminal: runs Claude?, which conversation, its colour, its
+   * cwd(s). Probes EVERY terminal every pass - the launch cache is not
+   * consulted, it pins the launch-time conversation and goes stale on an
+   * in-place switch. Null when no session name yet, or the probe fails. */
   private async _interrogateTerminal(widget: any): Promise<{
     hasClaude: boolean;
     sessionId: string | null;
+    color: string | null;
     cwds: string[];
   } | null> {
-    for (const entry of this._terminalsByPath.values()) {
-      if (entry.widget === widget && entry.sessionId) {
-        return { hasClaude: true, sessionId: entry.sessionId, cwds: [] };
-      }
-    }
     const sessName: string | undefined = widget?.content?.session?.name;
     if (typeof sessName !== 'string' || !sessName) {
       return null;
@@ -857,6 +840,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
       return {
         hasClaude: !!data?.has_claude,
         sessionId: data?.session_id ?? null,
+        color: data?.color ?? null,
         cwds: Array.isArray(data?.cwds) ? data.cwds : []
       };
     } catch (_err) {
@@ -864,38 +848,6 @@ export class ClaudeCodeSessionsWidget extends Widget {
       // probe - treat as unresolved and retry on the next poll.
       return null;
     }
-  }
-
-  /** Pick a terminal's tab colour from the session list. When the terminal runs
-   * a known conversation (its argv carried a ``--resume`` / ``--session-id``),
-   * match on that id ONLY: it takes the colour of the exact conversation, or -
-   * when that conversation is not the project's representative row - clears,
-   * rather than borrowing a sibling branch's colour. The cwd fallback is used
-   * ONLY for a terminal with no conversation id (a bare ``claude`` / ``-c``),
-   * matching the project the terminal is cwd'd in and preferring the longest
-   * matching path so a nested project wins over its parent. Returns null (clear)
-   * when no row matches or the matched row has no colour. */
-  private _colourForTerminal(
-    info: { sessionId: string | null; cwds: string[] },
-    sessions: ISession[]
-  ): string | null {
-    if (info.sessionId) {
-      const bySession = sessions.find(s => s.session_id === info.sessionId);
-      return bySession ? (bySession.color ?? null) : null;
-    }
-    let best: ISession | undefined;
-    let bestLen = -1;
-    for (const raw of info.cwds) {
-      const cwd = raw.replace(/\/+$/, '');
-      for (const s of sessions) {
-        const p = s.project_path.replace(/\/+$/, '');
-        if ((cwd === p || cwd.startsWith(p + '/')) && p.length > bestLen) {
-          best = s;
-          bestLen = p.length;
-        }
-      }
-    }
-    return best ? (best.color ?? null) : null;
   }
 
   /** Find an open terminal running the wanted conversation, or null.

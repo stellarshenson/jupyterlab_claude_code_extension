@@ -4,6 +4,16 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.49] - 2026-07-16
+
+### Fixed
+
+- A terminal tab no longer loses its colour after a while. The tab now takes the colour of the Claude conversation it is actually running, read from that conversation itself. Previously the colour was looked up through the project's entry in the panel, which tracks only the project's most recent conversation - so once a background worker started a newer one, an open terminal matched nothing and its tint was cleared. This was a regression introduced in 1.2.45 (DEF-11)
+
+### Changed
+
+- Colour selection moved into its own module so it can be properly tested. The tab-colour feature had no test coverage at all, which is how two colour bugs (DEF-10, DEF-11) shipped unnoticed; it is now covered
+
 ## [1.2.48] - 2026-07-16
 
 ### Changed

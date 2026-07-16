@@ -6,6 +6,9 @@ const fs: { readFileSync: (p: string, enc: string) => string } = require('fs');
 const path: { join: (...args: string[]) => string } = require('path');
 
 import type { ISession } from '../types';
+// Executed, not grepped - src/colour.ts is JupyterLab-free by design so the
+// tint logic can actually be run under jest.
+import { claudeTabColourId, colourForTerminal } from '../colour';
 
 const session = (over: Partial<ISession> = {}): ISession => ({
   project_path: '/p',
@@ -528,6 +531,92 @@ describe('launch spinner dismiss contract', () => {
    * `claude` / `-c` is identifiable too - reuse is not limited to extension
    * launches that carry an id in argv.
    */
+  /**
+   * Tab colour (DEF-11). A terminal's tint is the colour of the conversation
+   * it RUNS, which the backend reads from that conversation's own JSONL.
+   * Resolving the tint through the project row is the bug: a row carries only
+   * the project's representative conversation, and the representative flips to
+   * any newer JSONL - a daemon `--fork-session` worker writes one - which
+   * cleared the tint of every terminal not on the current representative.
+   */
+  describe('terminal tab colour', () => {
+    // These EXECUTE the shipped code (src/colour.ts) rather than grepping its
+    // text: the tint regressed twice (DEF-10, DEF-11) behind a green suite
+    // that ran none of it.
+    const rows = [
+      session({ project_path: '/w', session_id: 'ws', color: 'blue' }),
+      session({ project_path: '/w/proj', session_id: 'rep', color: 'green' })
+    ];
+
+    it('takes the running conversation colour, not the row (DEF-11)', () => {
+      // The row's representative is 'rep'/green - a daemon fork that stole the
+      // slot. The terminal runs 'mine', whose own colour is orange. Resolving
+      // via the rows found no match and CLEARED the tint; it must not.
+      expect(
+        colourForTerminal(
+          { sessionId: 'mine', color: 'orange', cwds: ['/w/proj'] },
+          rows
+        )
+      ).toBe('orange');
+    });
+
+    it('a conversation with no colour of its own clears', () => {
+      expect(
+        colourForTerminal(
+          { sessionId: 'mine', color: null, cwds: ['/w'] },
+          rows
+        )
+      ).toBeNull();
+    });
+
+    it('falls back to cwd only when the conversation is unreadable', () => {
+      expect(
+        colourForTerminal(
+          { sessionId: null, color: null, cwds: ['/w/proj'] },
+          rows
+        )
+      ).toBe('green');
+    });
+
+    it('cwd fallback prefers the nested project over its parent', () => {
+      expect(
+        colourForTerminal(
+          { sessionId: null, color: null, cwds: ['/w/proj/deep'] },
+          rows
+        )
+      ).toBe('green');
+      expect(
+        colourForTerminal(
+          { sessionId: null, color: null, cwds: ['/w/other'] },
+          rows
+        )
+      ).toBe('blue');
+    });
+
+    it('cwd fallback does not match a sibling on a shared prefix', () => {
+      // '/w/proj-extra' must not match '/w/proj' - the boundary is a real '/'.
+      expect(
+        colourForTerminal(
+          { sessionId: null, color: null, cwds: ['/w/proj-extra'] },
+          [
+            session({
+              project_path: '/w/proj',
+              session_id: 'r',
+              color: 'green'
+            })
+          ]
+        )
+      ).toBeNull();
+    });
+
+    it('maps Claude colours to tab ids and drops unknown ones', () => {
+      expect(claudeTabColourId('orange')).toBe('peach');
+      expect(claudeTabColourId('green')).toBe('mint');
+      expect(claudeTabColourId('chartreuse')).toBeNull();
+      expect(claudeTabColourId(null)).toBeNull();
+    });
+  });
+
   describe('conversation-aware reuse + open-branch contract', () => {
     const findTerm = (widgetSrc.match(
       /private async _findTerminalForSession[\s\S]*?\n  \}/
