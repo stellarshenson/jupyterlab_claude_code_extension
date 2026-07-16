@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.48] - 2026-07-16
+
+### Changed
+
+- Version alignment release - no functional change. The extension code is identical to 1.2.45. Versions 1.2.46 and 1.2.47 were local build increments only and were never published; this release brings the published version back in line with the local lineage
+
 ## [1.2.45] - 2026-07-15
 
 ### Fixed
