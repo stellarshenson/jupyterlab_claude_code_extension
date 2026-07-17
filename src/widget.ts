@@ -17,7 +17,11 @@ import { Menu, Widget } from '@lumino/widgets';
 import { Message } from '@lumino/messaging';
 
 import { requestAPI } from './request';
-import { claudeTabColourId, colourForTerminal } from './colour';
+import {
+  ITerminalColourInfo,
+  claudeTabColourId,
+  colourForTerminal
+} from './colour';
 import {
   addIcon,
   branchIcon,
@@ -189,6 +193,19 @@ export class ClaudeCodeSessionsWidget extends Widget {
   /** Toggle the --dangerously-skip-permissions flag on launched sessions. */
   setDangerouslySkipPermissions(on: boolean): void {
     this._dangerouslySkip = !!on;
+  }
+
+  /** Turn tab tinting on or off. Off drops the tint from Claude terminals at
+   * once rather than waiting for a reload; on re-tints from current colours. */
+  setColouredTabs(on: boolean): void {
+    const enabled = !!on;
+    if (this._colouredTabs === enabled) {
+      return;
+    }
+    this._colouredTabs = enabled;
+    void (enabled
+      ? this._reconcileTerminalColours()
+      : this._clearTerminalColours());
   }
 
   protected onAfterShow(_msg: Message): void {
@@ -797,10 +814,31 @@ export class ClaudeCodeSessionsWidget extends Widget {
    * few /proc reads per terminal; runs after each fetch (launch refresh + the
    * 30s poll), which is already gated to skip while a context menu is open. */
   private async _reconcileTerminalColours(): Promise<void> {
-    if (!this._colourfulTabs || !this._terminalTracker) {
+    if (!this._colouredTabs) {
       return;
     }
     const sessions = this._sessions ?? [];
+    await this._eachClaudeTerminal((widget, info) => {
+      this._applyTerminalColour(widget, colourForTerminal(info, sessions));
+    });
+  }
+
+  /** Drop the tint from every Claude terminal - the coloured-tabs setting went
+   * off. Only Claude terminals are touched, so a tint the user set by hand on
+   * some other tab survives. */
+  private async _clearTerminalColours(): Promise<void> {
+    await this._eachClaudeTerminal(widget => {
+      this._applyTerminalColour(widget, null);
+    });
+  }
+
+  /** Probe every open terminal and hand each one running Claude to `apply`. */
+  private async _eachClaudeTerminal(
+    apply: (widget: any, info: ITerminalColourInfo) => void
+  ): Promise<void> {
+    if (!this._colourfulTabs || !this._terminalTracker) {
+      return;
+    }
     const widgets: any[] = [];
     this._terminalTracker.forEach((widget: any) => {
       if (widget && !widget.isDisposed) {
@@ -813,7 +851,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
         if (!info || !info.hasClaude || widget.isDisposed) {
           return;
         }
-        this._applyTerminalColour(widget, colourForTerminal(info, sessions));
+        apply(widget, info);
       })
     );
   }
@@ -2305,6 +2343,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private _presentationMode: PresentationMode = DEFAULT_PRESENTATION_MODE;
   private _recentLimit: number = DEFAULT_RECENT_LIMIT;
   private _dangerouslySkip: boolean = false;
+  private _colouredTabs: boolean = true;
   private _displayNames: Map<string, string> = new Map();
   private _filter: string = '';
 }

@@ -26,6 +26,12 @@
       "description": "When enabled, newly spawned and resumed sessions are launched with `--dangerously-skip-permissions`. Bypasses every Claude Code permission prompt - only enable in sandboxes you trust.",
       "default": false
     },
+    "colouredTabs": {
+      "type": "boolean",
+      "title": "Coloured terminal tabs",
+      "description": "When enabled (default), a terminal running Claude has its dock tab tinted with that conversation's colour (the one `/color` sets). Turning it off clears the tint from Claude terminals and stops it being applied. Requires `jupyterlab_colourful_tab_extension`; without it there is no tint either way.",
+      "default": true
+    },
     "sidebar": {
       "type": "string",
       "title": "Sidebar position",

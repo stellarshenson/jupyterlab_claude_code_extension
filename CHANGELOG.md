@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.50] - 2026-07-17
+
+### Added
+
+- Coloured terminal tabs can now be turned off. A new "Coloured terminal tabs" setting controls whether a terminal running Claude has its tab tinted with the conversation's colour; it is on by default, so nothing changes unless you turn it off. Switching it off drops the tint from Claude terminals straight away rather than at the next reload, and only tabs running Claude are touched, so a tint you set by hand on another tab is left alone
+
 ## [1.2.49] - 2026-07-16
 
 ### Fixed

@@ -92,6 +92,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
           const dangerous = settings.get('dangerouslySkipPermissions')
             .composite as boolean;
           widget.setDangerouslySkipPermissions(!!dangerous);
+          // Defaults ON, so only an explicit `false` turns it off - a missing
+          // value must not read as disabled.
+          const coloured = settings.get('colouredTabs').composite as boolean;
+          widget.setColouredTabs(coloured !== false);
           const sidebar = settings.get('sidebar').composite as string;
           if (
             (sidebar === 'left' || sidebar === 'right') &&
