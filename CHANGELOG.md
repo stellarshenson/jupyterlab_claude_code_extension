@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.51] - 2026-07-23
+
+### Fixed
+
+- Installing the extension now pulls in the `jupyterlab_colourful_tab_extension` companion automatically, so a fresh install works on its own. The tab-colouring added in 1.2.42 consumes that companion's colour token as a required shared singleton, so when it was absent the whole panel failed to load rather than just going without a tint; declaring it as a package dependency guarantees it is always present. This also restores the release build, which had been failing since 1.2.49
+
 ## [1.2.50] - 2026-07-17
 
 ### Added
