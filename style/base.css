@@ -66,10 +66,26 @@
   height: 14px;
 }
 
-.jp-ClaudeSessionsPanel-search {
+.jp-ClaudeSessionsPanel-searchWrap {
   flex: 0 0 auto;
+  display: flex;
+  position: relative;
   margin: 4px 8px;
-  padding: 2px 6px;
+}
+
+/* `display: flex` above would beat the user-agent `[hidden] { display: none }`,
+   so the hidden state has to be restated. */
+.jp-ClaudeSessionsPanel-searchWrap[hidden] {
+  display: none;
+}
+
+.jp-ClaudeSessionsPanel-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+
+  /* Right padding keeps the text clear of the clear button. */
+  padding: 2px 22px 2px 6px;
   background: var(--jp-layout-color1);
   color: var(--jp-ui-font-color1);
   border: 1px solid var(--jp-border-color2);
@@ -79,6 +95,49 @@
   outline: none;
   -webkit-appearance: none;
   appearance: none;
+}
+
+/* WebKit draws its own cancel button on `type="search"`; ours replaces it,
+   and without this the two sit side by side. */
+.jp-ClaudeSessionsPanel-search::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
+/* Inside the field's right edge, sharing its background so it reads as part
+   of the input rather than a button laid over it. Inset by the 1px border so
+   it never covers the frame, and the background is deliberately identical in
+   every state - hover feedback comes from the icon alone. */
+.jp-ClaudeSessionsPanel-searchClear {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  background: var(--jp-layout-color1);
+}
+
+.jp-ClaudeSessionsPanel-searchClear svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* The icon carries `jp-icon3`, whose fill the theme drives, so the hover
+   state has to override the fill - `color` alone would do nothing. */
+.jp-ClaudeSessionsPanel-searchClear .jp-icon3 {
+  fill: var(--jp-ui-font-color3);
+}
+
+.jp-ClaudeSessionsPanel-searchClear:hover .jp-icon3 {
+  fill: var(--jp-ui-font-color1);
 }
 
 .jp-ClaudeSessionsPanel-search:focus {

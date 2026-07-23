@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.53] - 2026-07-23
+
+### Added
+
+- The filter box now has a clear button. As soon as you type, a small x appears at the right-hand end of the field; clicking it empties the filter and leaves the cursor in the box so you can type the next query straight away. The button shares the field's background so it reads as part of the input rather than a control sitting on top of it, and it stays hidden while the box is empty
+
 ## [1.2.51] - 2026-07-23
 
 ### Fixed

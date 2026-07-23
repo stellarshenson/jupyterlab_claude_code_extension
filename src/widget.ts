@@ -10,7 +10,12 @@ import { ServerConnection } from '@jupyterlab/services';
 import { IDefaultFileBrowser } from '@jupyterlab/filebrowser';
 import { ITerminalTracker } from '@jupyterlab/terminal';
 import { IColourfulTabs } from 'jupyterlab_colourful_tab_extension';
-import { copyIcon, folderIcon, terminalIcon } from '@jupyterlab/ui-components';
+import {
+  closeIcon,
+  copyIcon,
+  folderIcon,
+  terminalIcon
+} from '@jupyterlab/ui-components';
 import { CommandRegistry } from '@lumino/commands';
 import { UUID } from '@lumino/coreutils';
 import { Menu, Widget } from '@lumino/widgets';
@@ -263,20 +268,47 @@ export class ClaudeCodeSessionsWidget extends Widget {
     header.appendChild(refreshBtn);
     this._refreshBtn = refreshBtn;
 
+    // Input and its clear button share a wrapper so the button can sit inside
+    // the field's right edge. The wrapper carries the hidden toggle, so the
+    // button never outlives the input it belongs to.
+    const searchWrap = document.createElement('div');
+    searchWrap.className = 'jp-ClaudeSessionsPanel-searchWrap';
+    // Hidden by default; the filter-icon button reveals it. The ``hidden``
+    // attribute toggles ``display: none`` via the user-agent stylesheet, so
+    // the wrapper's ``display: flex`` must not override it (see base.css).
+    searchWrap.hidden = true;
+
     const search = document.createElement('input');
     search.type = 'search';
     search.className = 'jp-ClaudeSessionsPanel-search';
     search.placeholder = 'Filter sessions...';
     search.spellcheck = false;
-    // Hidden by default; the filter-icon button reveals it. Lumino's
-    // ``hidden`` attribute toggles ``display: none`` via the user-agent
-    // stylesheet so no extra CSS rule is needed.
-    search.hidden = true;
     search.addEventListener('input', () => {
       this._filter = search.value;
+      this._syncSearchClear();
       this._render();
     });
     this._searchEl = search;
+
+    const searchClear = document.createElement('button');
+    searchClear.className = 'jp-ClaudeSessionsPanel-searchClear';
+    searchClear.title = 'Clear filter';
+    searchClear.hidden = true;
+    closeIcon.element({ container: searchClear });
+    searchClear.addEventListener('click', () => {
+      this._filter = '';
+      search.value = '';
+      this._syncSearchClear();
+      this._render();
+      // Clearing is a step in filtering, not the end of it - keep the caret
+      // in the field so the next query can be typed straight away.
+      search.focus();
+    });
+    this._searchClearEl = searchClear;
+
+    searchWrap.appendChild(search);
+    searchWrap.appendChild(searchClear);
+    this._searchWrapEl = searchWrap;
 
     const body = document.createElement('div');
     body.className = 'jp-ClaudeSessionsPanel-body';
@@ -293,7 +325,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
     loading.appendChild(loadingSpinner);
 
     root.appendChild(header);
-    root.appendChild(search);
+    root.appendChild(searchWrap);
     root.appendChild(body);
     root.appendChild(loading);
 
@@ -306,11 +338,11 @@ export class ClaudeCodeSessionsWidget extends Widget {
    * the rows the next time they open the panel.
    */
   private _toggleFilterBar(): void {
-    if (!this._searchEl) {
+    if (!this._searchEl || !this._searchWrapEl) {
       return;
     }
-    const show = this._searchEl.hidden;
-    this._searchEl.hidden = !show;
+    const show = this._searchWrapEl.hidden;
+    this._searchWrapEl.hidden = !show;
     if (this._filterBtn) {
       this._filterBtn.classList.toggle('jp-mod-active', show);
     }
@@ -319,7 +351,16 @@ export class ClaudeCodeSessionsWidget extends Widget {
     } else if (this._filter) {
       this._filter = '';
       this._searchEl.value = '';
+      this._syncSearchClear();
       this._render();
+    }
+  }
+
+  /** Show the clear button only while the field has text - an "x" hovering
+   * over an empty box is noise, and there is nothing to clear. */
+  private _syncSearchClear(): void {
+    if (this._searchClearEl) {
+      this._searchClearEl.hidden = !this._searchEl?.value;
     }
   }
 
@@ -2313,6 +2354,8 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private _refreshBtn: HTMLButtonElement | null = null;
   private _filterBtn: HTMLButtonElement | null = null;
   private _searchEl: HTMLInputElement | null = null;
+  private _searchWrapEl: HTMLDivElement | null = null;
+  private _searchClearEl: HTMLButtonElement | null = null;
   private _sessions: ISession[] | null = null;
   private _expanded: Record<SectionKey, boolean> = loadExpanded();
   private _commands!: CommandRegistry;
