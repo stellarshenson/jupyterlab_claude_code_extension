@@ -221,6 +221,27 @@
   scrollbar-gutter: stable;
 }
 
+/* The gutter above is reserved in EVERY list, including ones with nothing to
+   scroll - and JupyterLab paints scrollbar tracks globally
+   (`::-webkit-scrollbar-track:vertical` draws endpad borders in
+   `--jp-scrollbar-background-color`). The two together rendered an empty
+   track in every short section: a two-row Recent showed a stub scrollbar it
+   could never use (DEF-12). Blanking the track keeps the reserved space - so
+   the column alignment the gutter exists for survives - while a list with
+   nothing to scroll now paints nothing. The thumb is deliberately left alone:
+   JupyterLab styles it globally, so a list that genuinely overflows still
+   scrolls and looks exactly as before. */
+.jp-ClaudeSessionsPanel-list::-webkit-scrollbar,
+.jp-ClaudeSessionsPanel-list::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.jp-ClaudeSessionsPanel-list::-webkit-scrollbar-track:vertical {
+  background: transparent;
+  border-top: 0 solid transparent;
+  border-bottom: 0 solid transparent;
+}
+
 .jp-ClaudeSessionsPanel-row {
   display: flex;
   align-items: center;

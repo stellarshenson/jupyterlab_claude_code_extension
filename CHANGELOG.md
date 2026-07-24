@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.54] - 2026-07-24
+
+### Fixed
+
+- A section with only a handful of rows no longer shows a stub scrollbar it cannot use. Every section reserves a strip of space for a scrollbar so the star and time columns stay aligned whether or not a section scrolls, but JupyterLab was drawing a scrollbar track into that reserved strip even when there was nothing to scroll - most noticeable on a short section such as a Recent list holding two conversations. The strip is still reserved, so the columns stay aligned, but nothing is drawn in it unless the list actually scrolls (DEF-12)
+
 ## [1.2.53] - 2026-07-23
 
 ### Added
