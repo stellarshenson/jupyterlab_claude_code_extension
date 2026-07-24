@@ -4,7 +4,15 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
-## [1.2.54] - 2026-07-24
+## [1.2.59] - 2026-07-24
+
+### Fixed
+
+- A short window can no longer force a scrollbar onto a section holding only a couple of conversations (DEF-12, for real this time - the 1.2.54 attempt treated a symptom that turned out to be genuine overflow). The panel layout was redesigned: sections size to their content, a section list caps at ten rows - easing down to a third of the window in mid-height windows but never below five rows, so a small section can never be capped under its own content - and when even the minimum sizes cannot fit, the whole panel body scrolls instead of hiding anything, with section headers sticking to the top so scrolled rows keep their label. The All section always keeps at least three rows visible with its own scrollbar, a collapsed section can no longer be squashed below its header, and the panel no longer loses your scroll position when it refreshes in the background
+
+### Changed
+
+- The "Recent items count" setting description now says what actually happens: the section lists as many sessions as you configure but displays up to ten rows and scrolls for the rest
 
 ### Fixed
 

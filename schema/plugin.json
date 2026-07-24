@@ -15,7 +15,7 @@
     "recentLimit": {
       "type": "integer",
       "title": "Recent items count",
-      "description": "Number of rows shown in the Recent section, sorted by last activity (descending).",
+      "description": "Number of sessions listed in the Recent section, sorted by last activity (descending). The section displays up to 10 rows and scrolls for the rest.",
       "default": 10,
       "minimum": 1,
       "maximum": 100

@@ -144,3 +144,4 @@ uv.lock
 
 # Reference design assets dropped into .resources (screenshot.png stays tracked)
 .resources/*.zip
+.playwright-mcp/

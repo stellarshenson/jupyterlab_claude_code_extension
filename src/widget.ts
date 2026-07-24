@@ -1096,7 +1096,10 @@ export class ClaudeCodeSessionsWidget extends Widget {
     const sessions = this._sessions ?? [];
 
     // Capture scrollTop per section so polling refreshes don't reset the
-    // user's place inside the All list.
+    // user's place inside the All list. The body scrolls too in short
+    // windows (DEF-12 safety valve) - clearing innerHTML clamps its
+    // scrollTop to 0, so it needs the same capture/restore.
+    const bodyScroll = this._bodyEl.scrollTop;
     const scrolls = new Map<string, number>();
     this._bodyEl
       .querySelectorAll<HTMLElement>('.jp-ClaudeSessionsPanel-section')
@@ -1152,6 +1155,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
           list.scrollTop = saved;
         }
       });
+    this._bodyEl.scrollTop = bodyScroll;
   }
 
   private _renderSection(key: SectionKey, items: ISession[]): void {

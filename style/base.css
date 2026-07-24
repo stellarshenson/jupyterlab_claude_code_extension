@@ -4,6 +4,13 @@
 */
 
 .jp-ClaudeSessionsPanel {
+  /* Single source for row height: the section list caps and the `all`
+     floor below derive from it via calc(), so a density change moves the
+     clamp's row-aligned endpoints with the rows (DEF-12). The 33vh
+     mid-band still cuts mid-row on purpose - the partial row is the
+     scroll-continuation cue. */
+  --ccs-row-height: 24px;
+
   display: flex;
   flex-direction: column;
   position: relative;
@@ -148,11 +155,15 @@
   color: var(--jp-ui-font-color3);
 }
 
+/* The body is the safety valve of the section layout (DEF-12): in normal
+   windows the `all` section absorbs all slack via flex and the body never
+   scrolls; only when the window is so short that the sections' minimum sizes
+   cannot fit does the body itself scroll, so no section is ever clipped. */
 .jp-ClaudeSessionsPanel-body {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: hidden auto;
   min-height: 0;
 }
 
@@ -163,22 +174,48 @@
   font-style: italic;
 }
 
+/* Favourites/Recent size to their content; the cap lives on their LIST
+   (below) with a 5-row floor, so a small section can never be capped under
+   its own content and self-scroll (DEF-12). */
 .jp-ClaudeSessionsPanel-section {
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
-  max-height: 33vh;
-  min-height: 0;
   border-bottom: 1px solid var(--jp-border-color3);
 }
 
+/* `all` is the unbounded internal scroller: it grows to fill the remaining
+   body. Collapsed (header-only) it must not shrink - flex-shrink 0 here -
+   or a crowded body squashes the bare header to a sliver. */
 .jp-ClaudeSessionsPanel-section[data-section='all'] {
-  flex: 1 1 0;
-  max-height: none;
+  flex: 1 0 auto;
+}
+
+/* Expanded `all` (it has a list) shrinks when space is tight, down to a
+   header + 3 rows floor - past that the body scrolls instead of clipping.
+   min-height must be explicit: the automatic minimum would be the list's
+   full CONTENT height (intrinsic sizing ignores overflow) and the section
+   would never shrink, forcing the whole body to scroll. */
+.jp-ClaudeSessionsPanel-section[data-section='all']:has(
+    > .jp-ClaudeSessionsPanel-list
+  ) {
+  flex-shrink: 1;
+  min-height: calc(24px + 3 * var(--ccs-row-height));
 }
 
 .jp-ClaudeSessionsPanel-sectionHeader {
+  /* Content-sized to ~24px (4px padding + a ui-font-size0 line); the
+     `all` floor calc below hardcodes that as its 24px header term - a
+     header density change must be reflected there. */
   flex: 0 0 auto;
+
+  /* When the body scrolls (short-window safety valve, DEF-12) each header
+     sticks to the top edge within its own section, so scrolled rows keep
+     their section label. Inert while the body fits - sticky in a
+     non-scrolling container changes nothing. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   width: 100%;
@@ -221,33 +258,30 @@
   scrollbar-gutter: stable;
 }
 
-/* The gutter above is reserved in EVERY list, including ones with nothing to
-   scroll - and JupyterLab paints scrollbar tracks globally
-   (`::-webkit-scrollbar-track:vertical` draws endpad borders in
-   `--jp-scrollbar-background-color`). The two together rendered an empty
-   track in every short section: a two-row Recent showed a stub scrollbar it
-   could never use (DEF-12). Blanking the track keeps the reserved space - so
-   the column alignment the gutter exists for survives - while a list with
-   nothing to scroll now paints nothing. The thumb is deliberately left alone:
-   JupyterLab styles it globally, so a list that genuinely overflows still
-   scrolls and looks exactly as before. */
-.jp-ClaudeSessionsPanel-list::-webkit-scrollbar,
-.jp-ClaudeSessionsPanel-list::-webkit-scrollbar-corner {
-  background: transparent;
+/* Cap for Favourites/Recent lists: at most 10 rows, yielding to 33vh in
+   mid-height windows so the body keeps fitting, but never below 5 rows -
+   the floor is what keeps the DEF-12 bug dead (a bare-vh cap fell below a
+   2-row section's own height in short windows and made it self-scroll). */
+.jp-ClaudeSessionsPanel-section .jp-ClaudeSessionsPanel-list {
+  max-height: clamp(
+    calc(5 * var(--ccs-row-height)),
+    33vh,
+    calc(10 * var(--ccs-row-height))
+  );
 }
 
-.jp-ClaudeSessionsPanel-list::-webkit-scrollbar-track:vertical {
-  background: transparent;
-  border-top: 0 solid transparent;
-  border-bottom: 0 solid transparent;
+.jp-ClaudeSessionsPanel-section[data-section='all']
+  .jp-ClaudeSessionsPanel-list {
+  /* No cap - `all` scrolls internally within the section's floor above. */
+  max-height: none;
 }
 
 .jp-ClaudeSessionsPanel-row {
   display: flex;
   align-items: center;
   padding: 0 8px;
-  height: 24px;
-  line-height: 24px;
+  height: var(--ccs-row-height);
+  line-height: var(--ccs-row-height);
   cursor: pointer;
   gap: 6px;
   user-select: none;

@@ -400,6 +400,59 @@ describe('launch spinner dismiss contract', () => {
       expect(branchTime).toMatch(/text-align: right/);
     });
 
+    it('section list caps clamp 5-10 rows and the body scrolls as safety valve (DEF-12)', () => {
+      const css: string = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'style', 'base.css'),
+        'utf-8'
+      );
+      // A bare-vh cap fell below a 2-row section's own height in short
+      // windows and made it self-scroll. The section itself carries no cap.
+      const section = (css.match(
+        /\.jp-ClaudeSessionsPanel-section \{[\s\S]*?\}/
+      ) ?? [''])[0];
+      expect(section).not.toMatch(/vh/);
+      expect(section).not.toMatch(/max-height/);
+      // Favourites/Recent lists cap at 10 rows, yield to 33vh mid-band,
+      // and never drop below a 5-row floor - endpoints derived from the
+      // row height custom property so a density change moves them with
+      // the rows.
+      const cap = (css.match(
+        /\.jp-ClaudeSessionsPanel-section \.jp-ClaudeSessionsPanel-list \{[\s\S]*?\}/
+      ) ?? [''])[0];
+      expect(cap).toMatch(/max-height: clamp\(/);
+      expect(cap).toMatch(/calc\(5 \* var\(--ccs-row-height\)\)/);
+      expect(cap).toMatch(/33vh/);
+      expect(cap).toMatch(/calc\(10 \* var\(--ccs-row-height\)\)/);
+      const row = (css.match(/\.jp-ClaudeSessionsPanel-row \{[\s\S]*?\}/) ?? [
+        ''
+      ])[0];
+      expect(row).toMatch(/height: var\(--ccs-row-height\)/);
+      // The body is the safety valve: it scrolls instead of clipping when
+      // the sections' minimum sizes cannot fit the window.
+      const body = (css.match(/\.jp-ClaudeSessionsPanel-body \{[\s\S]*?\}/) ?? [
+        ''
+      ])[0];
+      expect(body).toMatch(/overflow: hidden auto/);
+      expect(body).not.toMatch(/overflow: hidden;/);
+      // Collapsed `all` cannot be squashed (flex 1 0 auto); an expanded
+      // `all` (:has a list) shrinks only to a header+3-rows floor so it
+      // can never collapse to nothing.
+      const allBase = (css.match(
+        /\.jp-ClaudeSessionsPanel-section\[data-section='all'\] \{[\s\S]*?\}/
+      ) ?? [''])[0];
+      expect(allBase).toMatch(/flex: 1 0 auto/);
+      const allFloor = (css.match(
+        /\.jp-ClaudeSessionsPanel-section\[data-section='all'\]:has\([\s\S]*?\) \{[\s\S]*?\}/
+      ) ?? [''])[0];
+      expect(allFloor).toMatch(/flex-shrink: 1/);
+      expect(allFloor).toMatch(
+        /min-height: calc\(24px \+ 3 \* var\(--ccs-row-height\)\)/
+      );
+      // The body scroller keeps its place across re-renders.
+      expect(widgetSrc).toMatch(/const bodyScroll = this\._bodyEl\.scrollTop/);
+      expect(widgetSrc).toMatch(/this\._bodyEl\.scrollTop = bodyScroll/);
+    });
+
     it('now label shares the recently-active emphasis colour', () => {
       const css: string = fs.readFileSync(
         path.join(__dirname, '..', '..', 'style', 'base.css'),
