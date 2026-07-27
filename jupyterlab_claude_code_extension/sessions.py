@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import time
 from collections import Counter
 from pathlib import Path
@@ -31,6 +32,10 @@ REMOTE_CONTROL_FRESH_MS = 3_600_000  # 1 hour
 # project's current conversation. A dotfile so claude's own ``*.jsonl`` glob
 # ignores it. See ``switch_branch`` / ``_resolve_latest``.
 CURRENT_PIN_FILENAME = ".jl-current"
+# Ceiling on the ``claude agents --json`` call behind ``bg_agents`` (typically
+# ~0.4s). A sessions poll must never hang on a wedged CLI - on timeout the
+# panel degrades to "no background agents" rather than stalling.
+BG_AGENTS_TIMEOUT_S = 5.0
 
 
 def claude_dir() -> Path:
@@ -41,6 +46,59 @@ def claude_dir() -> Path:
 def claude_binary_available() -> str | None:
     """Return the resolved path of the ``claude`` binary or ``None``."""
     return shutil.which("claude")
+
+
+def bg_agents() -> dict[str, str]:
+    """Map conversation id -> short agent id for every live background agent.
+
+    A background agent owns its conversation for as long as its worker lives:
+    ``claude --resume <id>`` on such a conversation is refused ("currently
+    running as a background agent"), so a row whose conversation is listed here
+    must be opened with ``claude attach <short>`` instead (DEF-13). The short
+    id is exactly what ``attach`` takes.
+
+    ``claude agents --json`` is claude's own scripting surface and the same
+    authority that refuses the resume, so this can never disagree with the CLI
+    the way a read of the daemon's internal roster could. Returns ``{}`` when
+    claude is missing or the call fails, times out, or returns garbage - the
+    panel then behaves exactly as before rather than mislabelling rows.
+    """
+    binary = claude_binary_available()
+    if not binary:
+        return {}
+    try:
+        proc = subprocess.run(
+            [binary, "agents", "--json"],
+            capture_output=True,
+            timeout=BG_AGENTS_TIMEOUT_S,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if proc.returncode != 0:
+        return {}
+    try:
+        entries = json.loads(proc.stdout or b"[]")
+    except ValueError:
+        return {}
+    if not isinstance(entries, list):
+        return {}
+    owned: dict[str, str] = {}
+    for entry in entries:
+        # Interactive sessions are listed too; only a background worker holds
+        # its conversation against a resume.
+        if not isinstance(entry, dict) or entry.get("kind") != "background":
+            continue
+        session_id = entry.get("sessionId")
+        short = entry.get("id")
+        if (
+            isinstance(session_id, str)
+            and session_id
+            and isinstance(short, str)
+            and short
+        ):
+            owned[session_id] = short
+    return owned
 
 
 def _load_json(path: Path) -> Any:
@@ -614,7 +672,8 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
     ``remote_control``, ``favourite``, ``extra_sessions`` (count of parallel
     session JSONLs in the folder beyond the main one), ``color`` (the Claude
     session colour from ``/color`` or auto-assignment, e.g. ``"blue"``, or
-    None).
+    None), ``bg_id`` (short id of the live background agent owning the row's
+    conversation, or None).
 
     ``name`` is the session name Claude records for the most recently active
     session in that folder (``name_source = "session"``) when one exists,
@@ -630,6 +689,9 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
 
     favourites = set(load_favourites(root))
     states = session_state_by_cwd(root)
+    # One lookup per poll, shared by every row: a conversation held by a live
+    # background agent cannot be resumed, only attached to (DEF-13).
+    bg_owned = bg_agents()
 
     rows: list[dict] = []
     for project_dir in sorted(projects_dir.iterdir()):
@@ -703,6 +765,10 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
             "name_source": name_source,
             "extra_sessions": extra_sessions,
             "color": latest.get("agentColor"),
+            # Short background-agent id when a live bg worker owns this
+            # conversation, else None. Set means "open by attaching, not
+            # resuming" - a resume would be refused by claude (DEF-13).
+            "bg_id": bg_owned.get(latest.get("sessionId") or ""),
         })
 
     # Deduplicate by project_path: two encoded folders can resolve to the
@@ -825,6 +891,12 @@ def list_branches(claude_root: Path, encoded_path: str) -> dict | None:
     [{"session_id", "file_mtime", "label"}, ...]}`` - the current main
     session excluded, newest first, ALL of them (the frontend shows the 5
     most recent in the submenu and the full list in the "More..." popup).
+
+    Deliberately does NOT ask which branches a background agent owns: that
+    lookup costs a ``claude agents --json`` spawn (~0.375s, i.e. all of this
+    call), the fork watcher polls this every 2s for up to 3 minutes, and it
+    would only feed a marker. Opening any branch is correct without it - the
+    launch endpoint resolves the verb per conversation id (DEF-13).
     The label prefers the branch's own ``custom-title`` record, then the
     ``sessions-index.json`` summary, then the first 8 chars of the session
     id. Returns None on invalid path or when no main session resolves.

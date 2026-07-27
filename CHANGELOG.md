@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.64] - 2026-07-27
+
+### Fixed
+
+- A conversation that a running background agent has taken over can now be opened from the panel. Claude refuses to resume such a conversation - the agent owns it - so clicking the row used to fail with a message telling you to go and find the agent yourself, and a project whose newest conversation was held by an agent could not be opened at all. Those rows now carry a small `bg` chip, the hover tooltip names the agent holding the conversation, and clicking the row attaches to the agent instead of resuming it. Attaching joins the running agent rather than copying it, and the agent keeps working after you close the terminal. Which of the two happens is decided at the moment the terminal opens rather than from what the panel last saw, so a conversation an agent picked up seconds ago still opens correctly, and a terminal already attached to an agent is brought to focus rather than duplicated (DEF-13)
+
 ## [1.2.59] - 2026-07-24
 
 ### Fixed

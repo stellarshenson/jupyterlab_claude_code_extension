@@ -349,6 +349,22 @@
   height: 12px;
 }
 
+/* "bg" marker: this row's conversation belongs to a live background agent, so
+   a click attaches to the running agent instead of resuming (DEF-13). Quiet
+   outlined chip - an identity hint, not an alarm. */
+.jp-ClaudeSessionsPanel-bgBadge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 0 3px;
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 2px;
+  color: var(--jp-ui-font-color2);
+  font-size: var(--jp-ui-font-size0);
+  line-height: 1.3;
+  vertical-align: middle;
+}
+
 .jp-ClaudeSessionsPanel-favStar {
   flex: 0 0 auto;
   display: inline-flex;

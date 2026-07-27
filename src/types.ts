@@ -17,6 +17,12 @@ export interface ISession {
   /** Claude session colour from `/color` or auto-assignment (e.g. "blue"), or
    * null when the session carries none. Drives the terminal tab tint. */
   color: string | null;
+  /** Short id of the live background agent that owns this conversation as of
+   * the last poll, or null. Such a conversation is opened by attaching to the
+   * agent, not resumed - claude refuses `--resume` while a worker holds it
+   * (DEF-13). Display only: the panel marks and labels the row from this, while
+   * the server decides the actual verb at launch, where it cannot be stale. */
+  bg_id: string | null;
 }
 
 export interface ISessionsListResponse {
@@ -87,7 +93,9 @@ export interface IDeleteBranchesResponse {
 
 export interface ILaunchTerminalRequest {
   project_path: string;
-  /** Omit to start a brand-new claude session instead of resuming one. */
+  /** The conversation to open. Omit to start a brand-new claude session
+   * instead. Resumed normally, or attached to when a live background agent owns
+   * it - the server decides that, never the caller (DEF-13). */
   session_id?: string;
   dangerously_skip_permissions?: boolean;
 }

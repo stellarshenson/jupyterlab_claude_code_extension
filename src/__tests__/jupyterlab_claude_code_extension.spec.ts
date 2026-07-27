@@ -27,6 +27,7 @@ const session = (over: Partial<ISession> = {}): ISession => ({
   favourite: false,
   extra_sessions: 0,
   color: null,
+  bg_id: null,
   ...over
 });
 
@@ -824,5 +825,80 @@ describe('launch spinner dismiss contract', () => {
     // The empty buttons array is the reason resolve() no-ops; if this
     // ever becomes non-empty, the dismiss call can revisit resolve().
     expect(widgetSrc).toMatch(/_showLaunchSpinner[\s\S]*?buttons:\s*\[\]/);
+  });
+});
+
+/**
+ * Background-agent contract (DEF-13).
+ *
+ * A conversation held by a live background agent is attached to, not resumed.
+ * Every open just names its conversation and the server picks the verb at
+ * launch, so no surface can pick a wrong one; `bg_id` is display state, and
+ * these pin that split.
+ */
+describe('background agent attach contract (DEF-13)', () => {
+  const widgetSrc: string = fs.readFileSync(
+    path.join(__dirname, '..', 'widget.ts'),
+    'utf-8'
+  );
+  const typesSrc: string = fs.readFileSync(
+    path.join(__dirname, '..', 'types.ts'),
+    'utf-8'
+  );
+
+  it('types bg_id on rows', () => {
+    // Rows carry it; branches deliberately do not - see list_branches.
+    expect(typesSrc).toMatch(/bg_id: string \| null;/);
+  });
+
+  it('names the conversation and leaves the verb to the server', () => {
+    const launch = (widgetSrc.match(
+      /const launched = await requestAPI<ILaunchTerminalResponse>[\s\S]*?\n        \);/
+    ) ?? [''])[0];
+    expect(launch).toMatch(/session_id: session\.session_id/);
+    // A background agent can take or release a conversation inside the 30s
+    // poll window, so a verb chosen from `bg_id` here would be stale - the
+    // server decides at launch. `bg_id` must not reach the request at all.
+    expect(launch).not.toMatch(/attach_id/);
+    expect(launch).not.toMatch(/bg_id/);
+  });
+
+  it('marks an agent-owned row and names the agent in the row tooltip', () => {
+    const row = (widgetSrc.match(
+      /private _renderRow\([\s\S]*?\n    return row;/
+    ) ?? [''])[0];
+    expect(row).toMatch(/if \(session\.bg_id\)/);
+    expect(row).toMatch(/jp-ClaudeSessionsPanel-bgBadge/);
+    // The chip must NOT set its own title: a child title shadows the row's,
+    // hiding the path and session id behind a two-character chip.
+    const chip = (row.match(/bgBadge'[\s\S]*?appendChild\(bg\)/) ?? [''])[0];
+    expect(chip).not.toMatch(/\.title =/);
+    const tooltip = (widgetSrc.match(
+      /private _buildRowTooltip[\s\S]*?\n  \}/
+    ) ?? [''])[0];
+    expect(tooltip).toMatch(/Background agent: \$\{s\.bg_id\}/);
+  });
+
+  it('renames the open item and disables skip-permissions for an agent row', () => {
+    const resume = (widgetSrc.match(
+      /'claude-code-sessions:resume',[\s\S]*?\n    \}\);/
+    ) ?? [''])[0];
+    expect(resume).toMatch(
+      /label: \(\) =>[\s\S]*?bg_id \? 'Attach to Background Agent' : 'Resume'/
+    );
+    const dangerous = (widgetSrc.match(
+      /'claude-code-sessions:resume-dangerous',[\s\S]*?\n    \}\);/
+    ) ?? [''])[0];
+    expect(dangerous).toMatch(
+      /isEnabled: \(\) => !this\._activeSession\?\.bg_id/
+    );
+  });
+
+  it('styles the bg badge in base.css', () => {
+    const css: string = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'style', 'base.css'),
+      'utf-8'
+    );
+    expect(css).toMatch(/\.jp-ClaudeSessionsPanel-bgBadge \{/);
   });
 });

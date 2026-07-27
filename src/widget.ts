@@ -710,6 +710,10 @@ export class ClaudeCodeSessionsWidget extends Widget {
       // seconds, so show a modal spinner for visual feedback.
       const spinner = this._showLaunchSpinner();
       try {
+        // Just name the conversation. The server picks resume vs attach at
+        // launch, because a background agent can take or release a conversation
+        // inside our 30s poll window and only it can be authoritative (DEF-13);
+        // `bg_id` drives the marker and the menu label, never the verb.
         const launched = await requestAPI<ILaunchTerminalResponse>(
           'launch-terminal',
           this._serverSettings,
@@ -1263,6 +1267,20 @@ export class ClaudeCodeSessionsWidget extends Widget {
       );
       name.appendChild(badge);
     }
+    // A live background agent owns this conversation, so a click attaches to
+    // the running agent rather than resuming a dormant conversation. Marked so
+    // that difference is visible before the click, not a surprise after it
+    // (DEF-13). Inside the name span like the branch badge, so the time column
+    // stays the row's right-edge anchor.
+    // No own title: a child title shadows the row's, which would hide the path
+    // and session id behind a two-character chip. The row tooltip names the
+    // agent (see _buildRowTooltip), as the branch badge does.
+    if (session.bg_id) {
+      const bg = document.createElement('span');
+      bg.className = 'jp-ClaudeSessionsPanel-bgBadge';
+      bg.textContent = 'bg';
+      name.appendChild(bg);
+    }
     row.appendChild(name);
 
     // No star in the Favorites section - every row there is a favorite
@@ -1326,6 +1344,9 @@ export class ClaudeCodeSessionsWidget extends Widget {
     }
     if (s.remote_control) {
       lines.push('Remote control: active');
+    }
+    if (s.bg_id) {
+      lines.push(`Background agent: ${s.bg_id} (click attaches to it)`);
     }
     if (s.session_id) {
       lines.push(`Session id: ${s.session_id}`);
@@ -1424,7 +1445,10 @@ export class ClaudeCodeSessionsWidget extends Widget {
     });
 
     this._commands.addCommand('claude-code-sessions:resume', {
-      label: 'Resume',
+      // Attaching and resuming are different verbs - a live background agent is
+      // joined, not resumed - so the item says which one this row gets.
+      label: () =>
+        this._activeSession?.bg_id ? 'Attach to Background Agent' : 'Resume',
       execute: () => {
         if (this._activeSession) {
           void this._resumeInTerminal(this._activeSession);
@@ -1435,6 +1459,10 @@ export class ClaudeCodeSessionsWidget extends Widget {
     this._commands.addCommand('claude-code-sessions:resume-dangerous', {
       label: 'Resume (Skip Permissions)',
       icon: shieldIcon,
+      // A background agent's permission mode was fixed when it was spawned and
+      // attaching cannot change it, so the item is disabled rather than
+      // silently attaching in the agent's own mode.
+      isEnabled: () => !this._activeSession?.bg_id,
       execute: () => {
         if (this._activeSession) {
           void this._resumeInTerminal(this._activeSession, true);
@@ -2281,7 +2309,12 @@ export class ClaudeCodeSessionsWidget extends Widget {
    * be open independently and side by side - opening branch B never disturbs
    * branch A's terminal, and never refocuses a terminal running a different
    * conversation. Honours the global skip-permissions toggle like a normal
-   * resume. */
+   * resume.
+   *
+   * Naming the conversation is all this owes the server: it resolves resume vs
+   * attach per conversation id at launch (DEF-13), so this path needs no
+   * background-agent state of its own - including for the popup's pinned
+   * current row, which is the row's own conversation. */
   private async _openBranch(sessionId: string): Promise<void> {
     const active = this._activeSession;
     if (!active || !sessionId) {

@@ -1,9 +1,11 @@
 """Tornado API handlers for the Claude Code sessions extension."""
 from __future__ import annotations
 
+import asyncio
 import glob
 import json
 import os
+import re
 import sys
 
 import tornado
@@ -17,6 +19,16 @@ URL_PREFIX = "jupyterlab-claude-code-extension"
 
 
 _KNOWN_SHELLS = {"bash", "zsh", "fish", "sh", "dash", "ksh", "tcsh", "csh"}
+
+# Charset gate for a background-agent id as ``claude attach`` takes it (the
+# 8-char short form, or a full session uuid). Deliberately not a uuid grammar -
+# its only job is to keep anything that is not an id out of the glob in
+# ``_expand_short_session_id``, on the /proc read-back path. It does NOT guard
+# the launched argv: that id comes from ``sessions.bg_agents`` (i.e. from
+# ``claude agents --json``). Should claude ever emit a short id outside this
+# charset, the launch still works and only terminal reuse degrades - so the two
+# must agree.
+_ATTACH_ID_RE = re.compile(r"[0-9a-f-]{4,64}")
 
 
 # bash one-liner that waits until the JL WebSocket client has resized the pty
@@ -130,6 +142,66 @@ def _resume_id_from_cmdline(pid: int) -> str | None:
         return None
 
 
+def _parse_attach_id(cmdline: bytes) -> str | None:
+    """The background-agent id a ``claude attach <id>`` cmdline is showing.
+
+    An attach client is the only claude launch that identifies its conversation
+    NOWHERE else: it carries no ``--session-id``/``--resume`` and writes no
+    ``~/.claude/sessions/<pid>.json``, because the conversation lives in the
+    daemon's worker rather than in this process. Its argv is therefore the only
+    handle on it - without this parse, every click on a background-agent row
+    would spawn yet another attach terminal instead of focusing the open one
+    (DEF-13).
+
+    ``attach`` must be the FIRST positional (as both the panel and the CLI's own
+    hint spell it) and the id must look like an id, so a prompt that merely
+    contains the word cannot be mistaken for one. Kept pure (bytes in, no pid)
+    so it is unit-testable without a live process.
+    """
+    args = [p.decode("utf-8", "replace") for p in cmdline.split(b"\x00") if p]
+    if len(args) < 3 or args[1] != "attach":
+        return None
+    return args[2] if _ATTACH_ID_RE.fullmatch(args[2]) else None
+
+
+def _expand_short_session_id(short: str) -> str | None:
+    """Full conversation id for a background agent's short id, or None.
+
+    ``claude attach`` takes the 8-char short form, but the panel identifies
+    terminals by full conversation id, so an attach terminal has to be widened
+    back to one. The short id is the conversation id's own prefix, so the JSONL
+    filename resolves it. Matches are compared by conversation id, not by path:
+    a renamed project leaves the SAME conversation under two encoded dirs (the
+    state ``list_sessions`` already dedupes), and treating that as ambiguous
+    would cost reuse for every project that was ever renamed. Genuine ambiguity
+    - two different conversations sharing the prefix - yields None rather than a
+    guess, so the cost is a duplicate terminal, never a terminal claimed for the
+    wrong conversation.
+
+    Shape-checked and escaped here rather than trusting the caller: this is the
+    seam that reaches ``glob``, and ``glob.escape`` is what the rest of this
+    module does with an interpolated id (see ``_session_colour``).
+    """
+    if not _ATTACH_ID_RE.fullmatch(short):
+        return None
+    root = sessions_mod.claude_dir() / sessions_mod.PROJECTS_DIRNAME
+    try:
+        stems = {p.stem for p in root.glob(f"*/{glob.escape(short)}*.jsonl")}
+    except OSError:
+        return None
+    return stems.pop() if len(stems) == 1 else None
+
+
+def _attach_session_id_from_cmdline(pid: int) -> str | None:
+    """Conversation id of the ``claude attach`` client at ``pid``, or None."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as fh:
+            short = _parse_attach_id(fh.read())
+    except OSError:
+        return None
+    return _expand_short_session_id(short) if short else None
+
+
 def _session_id_from_pidfile(pid: int) -> str | None:
     """The conversation id claude records for its own process in
     ``~/.claude/sessions/<pid>.json``.
@@ -166,15 +238,27 @@ def _claude_session_id(root_pid: int) -> str | None:
     is what makes terminal reuse robust for terminals the extension did not
     launch: a bare ``claude`` or ``claude -c`` carries no id in argv but still
     runs one concrete session that the pid file names, so the frontend can
-    positively identify it and focus it instead of spawning a duplicate. None
-    when no claude is found or it records no session.
+    positively identify it and focus it instead of spawning a duplicate.
+
+    An ``attach`` client is checked FIRST, and only it (DEF-13). claude never
+    prunes ``~/.claude/sessions/``, so a pid file left by a long-dead process
+    can name the pid an attach client later gets. Every other launch flavour
+    overwrites such a leftover with its own pid file; an attach client writes
+    none, so the stale id would win permanently - focusing this terminal for an
+    unrelated row and tinting it with that conversation's colour. Its argv is
+    self-identifying (``attach`` as the first positional plus the id charset
+    gate) and mutually exclusive with the flags below, so checking it first
+    changes no other path. None when no claude is found or it records no
+    session.
     """
     queue: list[int] = [root_pid]
     while queue:
         pid = queue.pop(0)
         if _process_comm(pid) == "claude":
-            session_id = _session_id_from_pidfile(pid) or _resume_id_from_cmdline(
-                pid
+            session_id = (
+                _attach_session_id_from_cmdline(pid)
+                or _session_id_from_pidfile(pid)
+                or _resume_id_from_cmdline(pid)
             )
             if session_id:
                 return session_id
@@ -263,11 +347,19 @@ class StatusHandler(APIHandler):
 
 
 class SessionsListHandler(APIHandler):
-    """Returns the deduplicated session list."""
+    """Returns the deduplicated session list.
+
+    Off the IOLoop: the listing walks the projects tree AND shells out to
+    ``claude agents --json`` (``bg_agents``, DEF-13), and this endpoint is
+    polled every 30s - run inline it would stall the whole server (kernels,
+    terminals, contents) for the duration of each poll.
+    """
 
     @tornado.web.authenticated
-    def get(self) -> None:
-        rows = sessions_mod.list_sessions()
+    async def get(self) -> None:
+        rows = await asyncio.get_running_loop().run_in_executor(
+            None, sessions_mod.list_sessions
+        )
         self.finish(json.dumps({"sessions": rows}))
 
 
@@ -372,12 +464,22 @@ class SessionBranchesHandler(APIHandler):
     ``{"current", "total", "branches": [{"session_id", "file_mtime",
     "label"}]}`` - newest first, current main excluded. The frontend
     shows the 5 most recent in the submenu and the rest via "More...".
+
+    Off the IOLoop on its own merits: the listing opens and stats every branch
+    JSONL to read its title, unbounded by conversation count, and the fork
+    watcher polls this endpoint every 2s for up to 3 minutes. It makes no
+    subprocess call - that is the sessions listing's reason, not this one.
     """
 
     @tornado.web.authenticated
-    def get(self) -> None:
+    async def get(self) -> None:
         encoded_path = self.get_query_argument("encoded_path", default="")
-        result = sessions_mod.list_branches(sessions_mod.claude_dir(), encoded_path)
+        result = await asyncio.get_running_loop().run_in_executor(
+            None,
+            sessions_mod.list_branches,
+            sessions_mod.claude_dir(),
+            encoded_path,
+        )
         if result is None:
             self.set_status(400)
             self.finish(json.dumps({"error": "invalid_encoded_path"}))
@@ -461,6 +563,11 @@ class TerminalCwdHandler(APIHandler):
 
     Used by the frontend to match an existing terminal tab to a project
     folder without persisting any state in the browser.
+
+    Deliberately still synchronous, unlike the two listing handlers: this reads
+    ``/proc`` and, for an attach terminal only, globs the projects tree once -
+    bounded filesystem work with no subprocess, so it does not need the executor
+    those two were moved onto.
     """
 
     @tornado.web.authenticated
@@ -503,11 +610,17 @@ class TerminalCwdHandler(APIHandler):
 class LaunchClaudeTerminalHandler(APIHandler):
     """Spawn a JL terminal whose pty's only process is ``claude``.
 
-    With ``session_id`` in the body the session is resumed (``claude
-    --resume <id>``). With ``new_session_id`` (and no ``session_id``) a
+    With ``session_id`` in the body the session is opened: normally resumed
+    (``claude --resume <id>``), but attached to (``claude attach <short>``) when
+    a live background agent owns that conversation, since claude refuses to
+    resume one that is agent-owned (DEF-13). Which of the two applies is decided
+    HERE, at launch, not by the caller: the panel's flag is only as fresh as its
+    last 30s poll, and an agent can start or finish inside that window - a
+    caller-chosen verb would resurrect the defect (or fail an attach) for up to
+    a poll interval. With ``new_session_id`` (and no ``session_id``) a
     brand-new session starts under that caller-chosen id (``claude
     --session-id <uuid>``) - so the launched terminal is identifiable from its
-    argv and reuse can refocus it later. With neither, a bare ``claude``
+    argv and reuse can refocus it later. With none of them, a bare ``claude``
     starts an unnamed fresh session.
 
     Bypasses ``terminal:create-new`` (which spawns the user's $SHELL) so the
@@ -592,7 +705,19 @@ class LaunchClaudeTerminalHandler(APIHandler):
             self.set_status(503)
             self.finish(json.dumps({"error": "terminal_service_unavailable"}))
             return
-        if session_id:
+        # Is the conversation held by a live background agent right now? Only a
+        # plain open can be: a fork is claude's own documented escape from an
+        # agent-owned conversation, and a new session has no conversation yet.
+        # Asked here so the verb is right even when the panel's flag is stale.
+        attach_id: str | None = None
+        if session_id and not fork_session_id:
+            bg_owned = await asyncio.get_running_loop().run_in_executor(
+                None, sessions_mod.bg_agents
+            )
+            attach_id = bg_owned.get(session_id)
+        if attach_id:
+            argv = [claude, "attach", attach_id]
+        elif session_id:
             argv = [claude, "--resume", session_id]
         elif new_session_id:
             argv = [claude, "--session-id", new_session_id]
@@ -600,9 +725,16 @@ class LaunchClaudeTerminalHandler(APIHandler):
             argv = [claude]
         if fork_session_id:
             argv += ["--fork-session", "--session-id", fork_session_id]
-        if dangerously_skip:
+        # ``attach`` takes no options: it answers an extra argument with
+        # "warning: extra arguments ignored". The running agent already owns its
+        # permission mode and its name, so passing either would print that
+        # warning into the user's terminal and promise something it never did.
+        # Reachable, not defensive: the caller asks for skip-permissions off a
+        # flag that says the conversation is resumable, and an agent may have
+        # taken it since.
+        if dangerously_skip and not attach_id:
             argv.append("--dangerously-skip-permissions")
-        if isinstance(name, str) and name.strip():
+        if isinstance(name, str) and name.strip() and not attach_id:
             argv += ["-n", name.strip()]
         model = terminal_manager.create(
             shell_command=_wrap_with_init(argv),

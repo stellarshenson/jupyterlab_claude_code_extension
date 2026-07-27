@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import time
 from pathlib import Path
 from unittest import mock
@@ -12,6 +13,9 @@ import pytest
 
 from jupyterlab_claude_code_extension import routes as routes_mod
 from jupyterlab_claude_code_extension import sessions as sessions_mod
+# Bound at import time, so it survives the autouse stub that rebinds
+# ``sessions_mod.bg_agents`` for every other test (see conftest.py).
+from jupyterlab_claude_code_extension.sessions import bg_agents as real_bg_agents
 
 
 # ---------------------------------------------------------------------------
@@ -1630,3 +1634,315 @@ def test_resume_id_from_cmdline_reads_proc() -> None:
     finally:
         proc.kill()
         proc.wait()
+
+
+# ---------------------------------------------------------------------------
+# Background agents (DEF-13): a conversation a live bg worker owns cannot be
+# resumed, only attached to
+# ---------------------------------------------------------------------------
+
+
+def _agents_json(payload: object, returncode: int = 0):
+    """Stand in for ``claude agents --json`` returning ``payload``."""
+    completed = mock.Mock()
+    completed.returncode = returncode
+    completed.stdout = json.dumps(payload).encode()
+    return lambda *a, **k: completed
+
+
+def _raise(exc: BaseException):
+    def fail(*a, **k):
+        raise exc
+
+    return fail
+
+
+@pytest.fixture
+def claude_on_path(monkeypatch):
+    """Resolve the claude binary, so ``bg_agents`` gets as far as the CLI call."""
+    monkeypatch.setattr(
+        sessions_mod, "claude_binary_available", lambda: "/usr/bin/claude"
+    )
+
+
+def test_bg_agents_maps_background_conversations_to_short_ids(
+    monkeypatch, claude_on_path
+) -> None:
+    monkeypatch.setattr(sessions_mod.subprocess, "run", _agents_json([
+        # Interactive sessions are listed too but never hold a conversation
+        # against a resume - only background workers do.
+        {"kind": "interactive", "pid": 10, "sessionId": "interactive-sid"},
+        {
+            "kind": "background",
+            "id": "d47d74e9",
+            "sessionId": "d47d74e9-d323-4bbf-9b57-76eb171a6f45",
+            "state": "done",
+        },
+    ]))
+    assert real_bg_agents() == {
+        "d47d74e9-d323-4bbf-9b57-76eb171a6f45": "d47d74e9"
+    }
+
+
+def test_bg_agents_skips_entries_missing_either_id(
+    monkeypatch, claude_on_path
+) -> None:
+    monkeypatch.setattr(sessions_mod.subprocess, "run", _agents_json([
+        {"kind": "background", "sessionId": "no-short-id"},
+        {"kind": "background", "id": "no-session-id"},
+        {"kind": "background", "id": "", "sessionId": ""},
+        "not-a-dict",
+    ]))
+    assert real_bg_agents() == {}
+
+
+def test_bg_agents_without_claude_binary_does_not_spawn(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sessions_mod.subprocess,
+        "run",
+        _raise(AssertionError("no claude binary, so no subprocess may be spawned")),
+    )
+    monkeypatch.setattr(sessions_mod, "claude_binary_available", lambda: None)
+    assert real_bg_agents() == {}
+
+
+@pytest.mark.parametrize("failure", [
+    # Degrading to "no background agents" keeps the panel behaving exactly as
+    # it did before rather than mislabelling rows off a bad read.
+    OSError("cannot exec"),
+    subprocess.TimeoutExpired("claude", sessions_mod.BG_AGENTS_TIMEOUT_S),
+])
+def test_bg_agents_degrades_on_cli_failure(
+    monkeypatch, failure, claude_on_path
+) -> None:
+    monkeypatch.setattr(sessions_mod.subprocess, "run", _raise(failure))
+    assert real_bg_agents() == {}
+
+
+def test_bg_agents_degrades_on_nonzero_exit_and_garbage(
+    monkeypatch, claude_on_path
+) -> None:
+    monkeypatch.setattr(sessions_mod.subprocess, "run", _agents_json([], returncode=1))
+    assert real_bg_agents() == {}
+
+    garbage = mock.Mock()
+    garbage.returncode = 0
+    garbage.stdout = b"not json at all"
+    monkeypatch.setattr(sessions_mod.subprocess, "run", lambda *a, **k: garbage)
+    assert real_bg_agents() == {}
+
+    not_a_list = mock.Mock()
+    not_a_list.returncode = 0
+    not_a_list.stdout = b'{"kind": "background"}'
+    monkeypatch.setattr(sessions_mod.subprocess, "run", lambda *a, **k: not_a_list)
+    assert real_bg_agents() == {}
+
+
+def test_list_sessions_marks_only_the_bg_owned_row(
+    fake_claude: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        sessions_mod, "bg_agents", lambda *a, **k: {"aaaa-1111": "aaaa1111"}
+    )
+    rows = {r["project_path"]: r for r in sessions_mod.list_sessions(fake_claude)}
+    assert rows["/home/user/projA"]["bg_id"] == "aaaa1111"
+    assert rows["/home/user/projB"]["bg_id"] is None
+    assert rows["/home/user/projC"]["bg_id"] is None
+
+
+async def test_launch_terminal_attaches_when_an_agent_owns_the_conversation(
+    jp_fetch, fake_terminal_manager, tmp_path, monkeypatch
+) -> None:
+    # The caller only names the conversation; the verb is decided here, so a
+    # panel flag that went stale inside its 30s poll cannot pick the wrong one.
+    monkeypatch.setattr(
+        sessions_mod, "bg_agents", lambda *a, **k: {"sid-1": "d47d74e9"}
+    )
+    body = json.dumps({"project_path": str(tmp_path), "session_id": "sid-1"})
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "launch-terminal",
+        method="POST", body=body,
+    )
+    assert response.code == 200
+    cmd = fake_terminal_manager.kwargs["shell_command"]
+    assert cmd[-2:] == ["attach", "d47d74e9"]
+    assert "--resume" not in cmd
+
+
+async def test_launch_terminal_resumes_when_no_agent_owns_the_conversation(
+    jp_fetch, fake_terminal_manager, tmp_path, monkeypatch
+) -> None:
+    # The reverse staleness direction: the panel may still be flagging an agent
+    # that has since finished, and a resume is what works then.
+    monkeypatch.setattr(
+        sessions_mod, "bg_agents", lambda *a, **k: {"other-sid": "39c74874"}
+    )
+    body = json.dumps({"project_path": str(tmp_path), "session_id": "sid-1"})
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "launch-terminal",
+        method="POST", body=body,
+    )
+    assert response.code == 200
+    cmd = fake_terminal_manager.kwargs["shell_command"]
+    assert cmd[-2:] == ["--resume", "sid-1"]
+    assert "attach" not in cmd
+
+
+async def test_launch_terminal_attach_drops_inapplicable_flags(
+    jp_fetch, fake_terminal_manager, tmp_path, monkeypatch
+) -> None:
+    # ``attach`` answers an extra argument with "warning: extra arguments
+    # ignored" - the agent's permission mode and name were fixed at spawn, so
+    # passing them would print that warning and promise something untrue.
+    monkeypatch.setattr(
+        sessions_mod, "bg_agents", lambda *a, **k: {"sid-1": "d47d74e9"}
+    )
+    body = json.dumps({
+        "project_path": str(tmp_path),
+        "session_id": "sid-1",
+        "dangerously_skip_permissions": True,
+        "name": "some name",
+    })
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "launch-terminal",
+        method="POST", body=body,
+    )
+    assert response.code == 200
+    cmd = fake_terminal_manager.kwargs["shell_command"]
+    assert cmd[-2:] == ["attach", "d47d74e9"]
+    assert "--dangerously-skip-permissions" not in cmd
+    assert "-n" not in cmd
+
+
+async def test_launch_terminal_forks_an_agent_owned_conversation(
+    jp_fetch, fake_terminal_manager, tmp_path, monkeypatch
+) -> None:
+    # A fork is claude's own documented escape from an agent-owned conversation,
+    # so it must never be turned into an attach.
+    monkeypatch.setattr(
+        sessions_mod, "bg_agents", lambda *a, **k: {"sid-1": "d47d74e9"}
+    )
+    body = json.dumps({
+        "project_path": str(tmp_path),
+        "session_id": "sid-1",
+        "fork_session_id": "fork-9",
+    })
+    response = await jp_fetch(
+        "jupyterlab-claude-code-extension", "launch-terminal",
+        method="POST", body=body,
+    )
+    assert response.code == 200
+    cmd = fake_terminal_manager.kwargs["shell_command"]
+    assert "attach" not in cmd
+    assert cmd[-5:] == [
+        "--resume", "sid-1", "--fork-session", "--session-id", "fork-9",
+    ]
+
+
+def _cmdline(*args: str) -> bytes:
+    return b"\x00".join(a.encode() for a in args) + b"\x00"
+
+
+def test_parse_attach_id_reads_the_agent_id() -> None:
+    assert routes_mod._parse_attach_id(
+        _cmdline("claude", "attach", "d47d74e9")
+    ) == "d47d74e9"
+    # A full session id is accepted too - attach takes either form.
+    assert routes_mod._parse_attach_id(
+        _cmdline("claude", "attach", "d47d74e9-d323-4bbf-9b57-76eb171a6f45")
+    ) == "d47d74e9-d323-4bbf-9b57-76eb171a6f45"
+
+
+@pytest.mark.parametrize("cmdline", [
+    # Not the first positional - a prompt that merely contains the word is not
+    # an attach launch.
+    _cmdline("claude", "-p", "attach", "the debugger"),
+    # Missing id.
+    _cmdline("claude", "attach"),
+    # Not id-shaped.
+    _cmdline("claude", "attach", "--session-id"),
+    _cmdline("claude", "attach", "some-branch-name"),
+    # An ordinary resume carries no attach id.
+    _cmdline("claude", "--resume", "sid-1"),
+])
+def test_parse_attach_id_ignores_non_attach_cmdlines(cmdline) -> None:
+    assert routes_mod._parse_attach_id(cmdline) is None
+
+
+def test_expand_short_session_id_widens_via_the_jsonl_name(
+    patched_claude_dir: Path
+) -> None:
+    proj = patched_claude_dir / sessions_mod.PROJECTS_DIRNAME / "-w-proj"
+    proj.mkdir(parents=True)
+    (proj / "d47d74e9-d323-4bbf-9b57-76eb171a6f45.jsonl").write_text("{}\n")
+    assert routes_mod._expand_short_session_id("d47d74e9") == (
+        "d47d74e9-d323-4bbf-9b57-76eb171a6f45"
+    )
+    # No match, and an id-shaped value that is not on disk, both yield None.
+    assert routes_mod._expand_short_session_id("beefbeef") is None
+
+
+def test_expand_short_session_id_tolerates_a_renamed_project(
+    patched_claude_dir: Path
+) -> None:
+    # A rename leaves the SAME conversation under two encoded dirs (the state
+    # list_sessions already dedupes); treating that as ambiguous would cost
+    # reuse for every renamed project.
+    projects = patched_claude_dir / sessions_mod.PROJECTS_DIRNAME
+    for dirname in ("-w-old-name", "-w-new-name"):
+        d = projects / dirname
+        d.mkdir(parents=True)
+        (d / "d47d74e9-d323-4bbf-9b57-76eb171a6f45.jsonl").write_text("{}\n")
+    assert routes_mod._expand_short_session_id("d47d74e9") == (
+        "d47d74e9-d323-4bbf-9b57-76eb171a6f45"
+    )
+
+
+def test_expand_short_session_id_refuses_ambiguity(patched_claude_dir: Path) -> None:
+    # Two conversations sharing the prefix: a duplicate terminal is acceptable,
+    # claiming a terminal for the WRONG conversation is not.
+    proj = patched_claude_dir / sessions_mod.PROJECTS_DIRNAME / "-w-proj"
+    proj.mkdir(parents=True)
+    (proj / "d47d74e9-aaaa.jsonl").write_text("{}\n")
+    (proj / "d47d74e9-bbbb.jsonl").write_text("{}\n")
+    assert routes_mod._expand_short_session_id("d47d74e9") is None
+
+
+def test_expand_short_session_id_rejects_glob_metacharacters(
+    patched_claude_dir: Path
+) -> None:
+    proj = patched_claude_dir / sessions_mod.PROJECTS_DIRNAME / "-w-proj"
+    proj.mkdir(parents=True)
+    (proj / "d47d74e9-d323.jsonl").write_text("{}\n")
+    assert routes_mod._expand_short_session_id("*") is None
+    assert routes_mod._expand_short_session_id("d47d74e9-*") is None
+
+
+def test_claude_session_id_falls_through_to_the_attach_id(monkeypatch) -> None:
+    # An attach client has no pid file and no resume id - the attach id is the
+    # only handle, and without it a click would spawn a duplicate terminal.
+    monkeypatch.setattr(routes_mod, "_process_comm", lambda pid: "claude")
+    monkeypatch.setattr(routes_mod, "_process_children", lambda pid: [])
+    monkeypatch.setattr(routes_mod, "_session_id_from_pidfile", lambda pid: None)
+    monkeypatch.setattr(routes_mod, "_resume_id_from_cmdline", lambda pid: None)
+    monkeypatch.setattr(
+        routes_mod, "_attach_session_id_from_cmdline", lambda pid: "attached-sid"
+    )
+    assert routes_mod._claude_session_id(1) == "attached-sid"
+
+
+def test_claude_session_id_prefers_attach_over_a_stale_pidfile(monkeypatch) -> None:
+    # claude never prunes ~/.claude/sessions/, so a pid file left by a dead
+    # process can name the pid an attach client later gets. Every other launch
+    # overwrites such a leftover with its own pid file; an attach client writes
+    # none, so a stale id would win permanently and focus this terminal for an
+    # unrelated row.
+    monkeypatch.setattr(routes_mod, "_process_comm", lambda pid: "claude")
+    monkeypatch.setattr(routes_mod, "_process_children", lambda pid: [])
+    monkeypatch.setattr(
+        routes_mod, "_session_id_from_pidfile", lambda pid: "stale-leftover-sid"
+    )
+    monkeypatch.setattr(
+        routes_mod, "_attach_session_id_from_cmdline", lambda pid: "attached-sid"
+    )
+    assert routes_mod._claude_session_id(1) == "attached-sid"

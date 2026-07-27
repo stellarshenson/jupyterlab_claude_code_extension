@@ -13,6 +13,7 @@ Acceptance criteria for the whole plugin - one section per feature or panel beha
 - [Open Branched Conversation](#open-branched-conversation)
 - [Copy Session ID](#copy-session-id)
 - [Statusline CLI](#statusline-cli)
+- [Background Agent Sessions](#background-agent-sessions)
 
 ## Row Columns
 
@@ -339,3 +340,52 @@ Companion CLI `jupyterlab_claude_code install-claude-statusline` installs the po
 - [x] **Edge: existing statusline** - re-running overwrites the script and statusLine block (idempotent install)
   - log: 2026-06-12 criterion added
   - log: 2026-06-12 implemented, pending release
+
+## Background Agent Sessions
+
+A conversation held by a live Claude Code background agent (`claude --bg`, `/bg`) cannot be resumed - the CLI refuses `--resume` for as long as the worker owns it - so the panel opens such a row by attaching to the agent instead (`claude attach <short>`). The agent is joined, never copied, and it keeps running whether or not anyone is attached. `bg_agents()` asks `claude agents --json` which conversations are agent-owned (DEF-13).
+
+- [x] **Detection** - `sessions.bg_agents()` maps conversation id -> short agent id for every live background session, from `claude agents --json`; interactive sessions in that listing are ignored
+  - log: 2026-07-26 criterion added, implemented - 5s timeout, one call per sessions poll
+- [x] **Row flag** - each row carries `bg_id`: the short agent id when a live agent owns the row's conversation, else null. Display state only, and rows only: branch entries deliberately do not carry it
+  - log: 2026-07-26 criterion added, implemented - verified live, exactly the 2 agent-owned rows of 97 were flagged
+  - log: 2026-07-26 branch entries dropped the flag after the bug-hunter measured its cost - the lookup is a `claude agents --json` spawn at 0.375s, which is 100% of a branches request, and the fork watcher polls that endpoint every 2s for 3 minutes (up to 34s of CPU per fork) purely to render a marker. Opening a branch is correct without it, since the server resolves the verb per conversation id
+- [x] **Attach on click** - clicking an agent-owned row lands in a terminal running `claude attach <short>` at the project folder, not `claude --resume`
+  - log: 2026-07-26 criterion added, implemented - verified live, `claude attach d47d74e9` running for the reported row
+- [x] **Verb decided at launch, not by the caller** - every open just names its conversation and `launch-terminal` asks `bg_agents()` which verb applies, so no surface can pick a stale one: an agent that took the conversation since the last poll still gets an attach, and one that has finished gets a resume. A fork is never converted - `--fork-session` is claude's own escape from an agent-owned conversation
+  - log: 2026-07-26 criterion added after the bug-hunter showed a 30s window where a click on a project whose agent had just started reproduced the verbatim refusal; the decision moved server-side and `attach_id` left the wire entirely
+  - log: 2026-07-26 verified live - POST with only `session_id` for the reported conversation launched `claude attach d47d74e9`; pytest covers owned -> attach, not-owned -> resume, and fork -> still forks
+- [x] **Visible marker** - an agent-owned row shows a quiet `bg` chip, and the ROW tooltip names the agent and states that a click attaches. Panel rows only: nowhere else marks agent ownership
+  - log: 2026-07-26 criterion added, implemented - verified live in the rendered panel
+  - log: 2026-07-26 the branch-list and popup markers were both dropped - the branch one cost 0.375s per right-click (see Row flag), and the popup one would have been the only markable row in a list whose others can no longer be marked, implying they are clean when their status is unknowable (slop-hunter finding)
+  - log: 2026-07-26 the chip carries no `title` of its own - a child title shadows the row's, hiding path and session id behind a two-character chip (slop-hunter finding)
+- [x] **Menu honesty** - the context-menu open item reads "Attach to Background Agent" for such a row, and "Resume (Skip Permissions)" is disabled: the agent's permission mode was fixed when it was spawned and attaching cannot change it
+  - log: 2026-07-26 criterion added, implemented
+  - log: 2026-07-26 both are best-effort display hints off the last poll: if an agent took the conversation since, the server attaches and drops `--dangerously-skip-permissions` silently, since attach cannot honour it (never granting more permission than asked)
+- [x] **Reuse** - a second click focuses the open attach terminal instead of spawning another; the terminal is identified from its argv, since an attach client writes no `~/.claude/sessions/<pid>.json` and carries no `--resume`
+  - log: 2026-07-26 criterion added, implemented - verified live, two clicks produced one `claude attach` process
+- [x] **Nothing lost on detach** - closing an attach terminal leaves the agent running; the row stays flagged and re-attachable
+  - log: 2026-07-26 criterion added, verified live - both agents still listed after their attach clients were killed
+- [x] **Edge: agent finishes between poll and click** - the flag is only as fresh as the last poll (30s window); a click on a stale flag runs `claude attach <short>` for an agent that has exited, which prints `No job matching '<short>'` and exits immediately, closing the tab - so the click appears to do nothing until the next poll clears the flag and the row resumes normally. No session is lost and no wrong conversation is ever opened
+  - log: 2026-07-26 criterion added
+  - log: 2026-07-26 wording corrected against the real CLI behaviour - `claude attach <dead-id>` exits 0, so the tab opens and closes rather than showing a lasting error (slop-hunter finding)
+- [x] **Edge: conversation with no saved transcript** - any session killed before its first response finished leaves a metadata-only stub JSONL (no `user` or `assistant` record), which the panel lists like any other conversation but neither verb can open: `claude attach` answers `Couldn't wake <short> - This session has no saved transcript` and `claude --resume` answers `No conversation found with session ID`. Clicking it opens a tab that closes again immediately, since claude is the pty's only process - the same "appears to do nothing" outcome as a stale flag, with nothing lost because the stub holds no conversation. Pre-existing and unrelated to background agents (the resume never reaches the agent refusal); a stub can even be a project's elected representative when it is that project's only JSONL, making the row itself unopenable with no agent involved
+  - log: 2026-07-26 criterion added after the live check on branch agent `78e82229` in the reported project found this state; verified both verbs fail and that the failure predates the fix
+  - log: 2026-07-26 widened from "branch" to any conversation, and the tab-closes behaviour observed rather than assumed - the launched terminal disappeared from the server's terminal list within 20s (bug-hunter and architect findings). Measured scope: 1 stub among 108 conversations on this machine, 0 rows currently electing one
+  - log: 2026-07-26 recorded option, NOT implemented: claude's own remedy is `claude respawn <short>`, which starts the session fresh. Deliberately not wired to a click - respawn is a create action, and substituting it for "open" is the exact dishonesty this feature's server-side verb override avoids (attach and resume both land in the SAME conversation, which is what licenses substituting them). If ever wanted it belongs as an explicit context-menu item labelled as starting fresh, enabled only on the detectable stub state
+
+- [x] **Edge: claude missing or the listing fails** - `bg_agents()` returns an empty map on a missing binary, non-zero exit, timeout or unparseable output, so the panel behaves exactly as it did before rather than mislabelling rows
+  - log: 2026-07-26 criterion added, implemented - covered by pytest
+- [x] **Every surface, one rule** - the row, the Open Branched Conversation submenu, and the Manage Sessions popup (including its pinned current row) all just send the conversation id, and the server resolves the verb for that exact conversation - so a branch owned by a different agent than its row, or the popup's current row, cannot open with the wrong verb
+  - log: 2026-07-26 criterion added after the architect found the DEF-13 refusal surviving on the popup's pinned current row - `list_branches` excludes the current conversation, so a client-side branch lookup missed it and fell back to a resume
+  - log: 2026-07-26 first fixed client-side, then made moot by the server-side decision; the client plumbing was deleted as dead code once both reviewers proved nothing downstream read it
+- [x] **Server responsiveness** - the sessions and branches endpoints run their listing off the IOLoop (`run_in_executor`), so neither stalls kernels, terminals or the contents API. Sessions carries the CLI call; branches earns the offload on its own, scanning every branch JSONL for a title while the fork watcher polls it every 2s for up to 3 minutes
+  - log: 2026-07-26 criterion added after the architect found the new subprocess blocking two synchronous handlers
+  - log: 2026-07-26 reason restated per endpoint once branches stopped calling the CLI - the offload stays, because its per-conversation JSONL scans are unbounded by design
+- [x] **Edge: two conversations share a short-id prefix** - widening an attach client's short id to a full conversation id returns nothing when the prefix is ambiguous, so a terminal is never claimed for the wrong conversation (the cost is a duplicate terminal, not a wrong one)
+  - log: 2026-07-26 criterion added, implemented - covered by pytest
+
+### Background Agent Sessions - API
+
+- `POST launch-terminal` body `{project_path, session_id}` -> `{terminal_name}`; the server asks `bg_agents()` at launch and emits `[claude, attach, <short>]` when a live agent owns that conversation (dropping `--dangerously-skip-permissions` and `-n`, which attach cannot honour), else `[claude, --resume, <id>]`. A fork is never converted to an attach. There is no `attach_id` field - the caller never chooses the verb
+- `GET sessions` rows carry `bg_id: string | null`, display state only; `GET sessions/branches` entries deliberately do not

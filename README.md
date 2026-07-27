@@ -28,6 +28,7 @@ Chat-panel extensions re-implement the agent loop and trail the real tool. This 
 - **Three-section side panel** - Favorites, Recent, and All projects, each scrolling independently
 - **Remote control indicator** - a green dot marks sessions that are actively under Claude's remote control, not merely a terminal that happens to be running
 - **One-click resume** - click a row to jump back into that session in a terminal. If a terminal for the project is already open, it's reused instead of duplicated
+- **Background agents** - a conversation held by a running background agent (`claude --bg`, `/bg`) cannot be resumed, so its row is marked with a small `bg` chip and clicking it attaches to the agent instead (`claude attach`). The agent is joined, never copied, and it keeps running when you close the terminal
 - **Favorites** - star projects you keep coming back to via the right-click menu
 - **Remove** - drop a project's Claude history from the panel via the right-click menu; a confirmation dialog names the project and warns it removes the whole project and all its conversations before anything is touched, then the history folder is moved to the trash (it honours JupyterLab's "move files to trash" setting), not deleted permanently
 - **Clean up parallel sessions** - when a project has accumulated extra sessions beyond the main one, a right-click menu item (showing the count in brackets) removes them all, keeping only the main session; a confirmation dialog naming the project and the count appears first, and removed files honour the same trash setting
@@ -39,7 +40,7 @@ Chat-panel extensions re-implement the agent loop and trail the real tool. This 
 - **Coloured terminal tabs** - each Claude session's colour (set with `/color`, or auto-assigned) tints its terminal tab, so open sessions are easy to tell apart; needs the companion `jupyterlab_colourful_tab_extension` (>= 1.0.19, installed automatically), which supplies the tab-colouring API. On by default; turn it off with the "Coloured terminal tabs" setting and the tint is dropped straight away
 - **Search** - fuzzy filter toggled by the funnel button next to refresh; once you type, a clear button appears at the end of the field to empty it in one click
 - **Presentation modes** - label rows by session name (so a `/rename` shows through), folder name, or path relative to the JupyterLab root
-- **Hover tooltip** with project path, last activity, message count, branch, and session id
+- **Hover tooltip** with project path, last activity, message count, branch, background agent, and session id
 - **Auto-disabled** when the Claude Code CLI is not installed
 
 ## Requirements
