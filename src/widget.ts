@@ -51,6 +51,11 @@ import {
   ISwitchResponse
 } from './types';
 
+// This poll is also what refreshes the server's background-agent roster
+// snapshot, which the context menu's branch fetch reads instead of spawning
+// `claude agents --json` on the click path. Raising it past
+// BG_AGENTS_CACHE_MAX_AGE_S (sessions.py) leaves the snapshot stale at every
+// menu open and silently puts that ~0.4s spawn back in front of the menu.
 const POLL_INTERVAL_MS = 30_000;
 // After a fork is requested, watch for its lazily-written JSONL at this fast
 // cadence (bounded) so a new branch surfaces in seconds, not on the slow poll.
@@ -1409,6 +1414,18 @@ export class ClaudeCodeSessionsWidget extends Widget {
     return b.label === shortId ? b.label : `${b.label} (${shortId})`;
   }
 
+  /** Menu-item label for a branch: display name, relative time, and a
+   * trailing `(bg)` when a live background agent owns the conversation -
+   * opening it attaches to the agent rather than resuming (DEF-13). The
+   * marker lives in the label rather than the icon because both branch
+   * submenus need their icon slot for their own intent, and because words
+   * are what assistive tech reads (the same reason the row's own open item
+   * reads "Attach to Background Agent"). */
+  private _branchMenuLabel(b: IBranch): string {
+    const time = this._formatRelativeTime(b.file_mtime);
+    return `${this._branchDisplayName(b)} - ${time}${b.bg_id ? ' (bg)' : ''}`;
+  }
+
   private _setRefreshSpinning(on: boolean): void {
     if (!this._refreshBtn) {
       return;
@@ -1557,6 +1574,14 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
     this._commands.addCommand('claude-code-sessions:switch-branch', {
       label: args => String(args.label ?? ''),
+      // The icon column carries the submenu's INTENT, never the row's state:
+      // the two branch submenus list the same conversations with the same
+      // labels, so if both resolved their icon from `bg_id` a bg row would
+      // render identically in each and a pointer slip would switch the
+      // current conversation instead of opening a terminal. Fork/bg is
+      // marked in the label instead (see _openContextMenu), which is also
+      // how the panel rows and the popup mark it - a text "bg".
+      icon: branchIcon,
       execute: args => {
         const sessionId = String(args.session_id ?? '');
         if (sessionId) {
@@ -1577,6 +1602,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
     this._commands.addCommand('claude-code-sessions:open-branch', {
       label: args => String(args.label ?? ''),
+      // Intent glyph, not row state - see the switch-branch command above.
       icon: terminalIcon,
       execute: args => {
         const sessionId = String(args.session_id ?? '');
@@ -1725,7 +1751,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
     if (session.extra_sessions > 0) {
       try {
         const data = await requestAPI<IBranchesResponse>(
-          `sessions/branches?encoded_path=${encodeURIComponent(session.encoded_path)}`,
+          `sessions/branches?encoded_path=${encodeURIComponent(session.encoded_path)}&include_bg=1`,
           this._serverSettings,
           { cache: 'no-store' }
         );
@@ -1741,7 +1767,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
             command: 'claude-code-sessions:switch-branch',
             args: {
               session_id: b.session_id,
-              label: `${this._branchDisplayName(b)} - ${this._formatRelativeTime(b.file_mtime)}`
+              label: this._branchMenuLabel(b)
             }
           });
         }
@@ -1760,7 +1786,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
             command: 'claude-code-sessions:open-branch',
             args: {
               session_id: b.session_id,
-              label: `${this._branchDisplayName(b)} - ${this._formatRelativeTime(b.file_mtime)}`
+              label: this._branchMenuLabel(b)
             }
           });
         }
@@ -1868,12 +1894,20 @@ export class ClaudeCodeSessionsWidget extends Widget {
     // _openBranch, reusing only a terminal already running it) and closes the
     // popup. stopPropagation keeps the click from toggling selection or
     // switching the row.
-    const openButton = (sessionId: string): HTMLButtonElement => {
+    const openButton = (
+      sessionId: string,
+      bgId: string | null
+    ): HTMLButtonElement => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'jp-ClaudeSessionsPanel-branchOpen';
       btn.textContent = 'Open';
-      btn.title = 'Open this conversation in its own terminal';
+      // A child title shadows the row's, so on a bg row this tooltip is the
+      // only one reachable while pointing at the button - it must not assert
+      // the wrong verb (DEF-13).
+      btn.title = bgId
+        ? `Attach to background agent ${bgId}`
+        : 'Open this conversation in its own terminal';
       btn.addEventListener('click', e => {
         e.stopPropagation();
         dialog.dispose();
@@ -1934,13 +1968,36 @@ export class ClaudeCodeSessionsWidget extends Widget {
       const currentName = this._activeSession
         ? this._lookupName(this._activeSession)
         : current.slice(0, 8);
-      currentLabel.textContent = `${currentName} (${current.slice(0, 8)})`;
+      // Text in its own ellipsising span so the chip survives truncation -
+      // same structure as the branch rows below.
+      const currentText = document.createElement('span');
+      currentText.className = 'jp-ClaudeSessionsPanel-branchLabelText';
+      currentText.textContent = `${currentName} (${current.slice(0, 8)})`;
+      currentLabel.appendChild(currentText);
+      // The current conversation can be bg-owned too - same chip as its
+      // panel row, so the popup tells the same story (DEF-13). Resolved once
+      // for both the chip and the Open button's tooltip, so the two can
+      // never disagree. Gated on the ids matching: `current` comes from the
+      // live branches fetch while `bg_id` is from the last 30s poll, so
+      // between polls the row can print a conversation the flag does not
+      // describe.
+      const currentBg =
+        this._activeSession?.session_id === current
+          ? this._activeSession.bg_id
+          : null;
+      if (currentBg) {
+        const bg = document.createElement('span');
+        bg.className = 'jp-ClaudeSessionsPanel-bgBadge';
+        bg.textContent = 'bg';
+        currentLabel.appendChild(bg);
+        currentRow.title += `\nBackground agent: ${currentBg}`;
+      }
       currentRow.appendChild(currentLabel);
       const badge = document.createElement('span');
       badge.className = 'jp-ClaudeSessionsPanel-branchCurrentBadge';
       badge.textContent = 'current';
       currentRow.appendChild(badge);
-      currentRow.appendChild(openButton(current));
+      currentRow.appendChild(openButton(current, currentBg));
       currentRow.appendChild(this._branchCopyButton(current));
       list.appendChild(currentRow);
 
@@ -1997,7 +2054,34 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
         const label = document.createElement('span');
         label.className = 'jp-ClaudeSessionsPanel-branchLabel';
-        label.textContent = this._branchDisplayName(b);
+        // The text gets its own ellipsising span so the marker after it can
+        // never be clipped away: branch labels are titles/summaries that
+        // routinely fill the popup's label column, and a marker inside the
+        // ellipsised span vanishes on exactly those rows (ux finding). The
+        // label itself becomes the flex line; the time column stays the
+        // row's right-edge anchor.
+        const labelText = document.createElement('span');
+        labelText.className = 'jp-ClaudeSessionsPanel-branchLabelText';
+        labelText.textContent = this._branchDisplayName(b);
+        label.appendChild(labelText);
+        // Fork/bg marker: normal forks carry the branch icon, a conversation
+        // a live background agent owns carries the bg chip - opening it
+        // attaches to the agent instead of resuming (DEF-13).
+        if (b.bg_id) {
+          const bg = document.createElement('span');
+          bg.className = 'jp-ClaudeSessionsPanel-bgBadge';
+          bg.textContent = 'bg';
+          label.appendChild(bg);
+          row.title += `\nBackground agent: ${b.bg_id}`;
+        } else {
+          const fork = document.createElement('span');
+          fork.className = 'jp-ClaudeSessionsPanel-branchBadge';
+          const icon = document.createElement('span');
+          icon.className = 'jp-ClaudeSessionsPanel-branchBadgeIcon';
+          branchIcon.element({ container: icon });
+          fork.appendChild(icon);
+          label.appendChild(fork);
+        }
         row.appendChild(label);
 
         const time = document.createElement('span');
@@ -2005,7 +2089,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
         time.textContent = this._formatRelativeTime(b.file_mtime);
         row.appendChild(time);
 
-        row.appendChild(openButton(b.session_id));
+        row.appendChild(openButton(b.session_id, b.bg_id));
         row.appendChild(this._branchCopyButton(b.session_id));
 
         row.addEventListener('click', () => {
@@ -2088,7 +2172,7 @@ export class ClaudeCodeSessionsWidget extends Widget {
               throw new Error('no active session');
             }
             const fresh = await requestAPI<IBranchesResponse>(
-              `sessions/branches?encoded_path=${encodeURIComponent(session.encoded_path)}`,
+              `sessions/branches?encoded_path=${encodeURIComponent(session.encoded_path)}&include_bg=1`,
               this._serverSettings,
               { cache: 'no-store' }
             );

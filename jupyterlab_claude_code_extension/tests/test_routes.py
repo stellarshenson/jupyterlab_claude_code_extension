@@ -386,6 +386,74 @@ def test_list_branches_rejects_traversal(fake_claude: Path) -> None:
     assert sessions_mod.list_branches(fake_claude, "") is None
 
 
+def test_list_branches_marks_bg_owned_only_when_asked(
+    fake_claude: Path, monkeypatch
+) -> None:
+    """include_bg=True resolves bg_id per branch; the default never spawns.
+
+    The default path must not even call ``bg_agents`` - the fork watcher
+    polls this listing every 2s and may not pay the ~0.4s CLI spawn.
+    """
+    _make_branch_project(fake_claude, 3)
+    monkeypatch.setattr(
+        sessions_mod, "bg_agents", lambda: {"sid-0": "shortid0"}
+    )
+    result = sessions_mod.list_branches(
+        fake_claude, "-home-user-branchy", include_bg=True
+    )
+    bg = {b["session_id"]: b["bg_id"] for b in result["branches"]}
+    assert bg == {"sid-1": None, "sid-0": "shortid0"}
+
+    monkeypatch.setattr(
+        sessions_mod,
+        "bg_agents",
+        _raise(AssertionError("bg_agents must not run without include_bg")),
+    )
+    result = sessions_mod.list_branches(fake_claude, "-home-user-branchy")
+    assert all(b["bg_id"] is None for b in result["branches"])
+
+
+def test_list_branches_serves_bg_from_poll_snapshot(
+    fake_claude: Path, monkeypatch
+) -> None:
+    """A fresh roster snapshot makes the include_bg path spawn-free.
+
+    The context menu blocks on this listing before it paints, so once the
+    30s sessions poll has refreshed the snapshot, a right-click may not pay
+    the ~0.4s ``claude agents --json`` spawn again (ux/bug-hunter finding).
+    A stale snapshot falls through to a real spawn.
+    """
+    _make_branch_project(fake_claude, 3)
+    monkeypatch.setattr(
+        sessions_mod, "bg_agents", lambda: {"sid-0": "shortid0"}
+    )
+    sessions_mod._bg_agents_refresh()
+
+    monkeypatch.setattr(
+        sessions_mod,
+        "bg_agents",
+        _raise(AssertionError("fresh snapshot must be served, not respawned")),
+    )
+    result = sessions_mod.list_branches(
+        fake_claude, "-home-user-branchy", include_bg=True
+    )
+    bg = {b["session_id"]: b["bg_id"] for b in result["branches"]}
+    assert bg == {"sid-1": None, "sid-0": "shortid0"}
+
+    # Age the snapshot past the ceiling: the next include_bg fetch respawns.
+    stamp, roster = sessions_mod._bg_agents_cache
+    monkeypatch.setattr(
+        sessions_mod,
+        "_bg_agents_cache",
+        (stamp - sessions_mod.BG_AGENTS_CACHE_MAX_AGE_S - 1, roster),
+    )
+    monkeypatch.setattr(sessions_mod, "bg_agents", lambda: {})
+    result = sessions_mod.list_branches(
+        fake_claude, "-home-user-branchy", include_bg=True
+    )
+    assert all(b["bg_id"] is None for b in result["branches"])
+
+
 def test_switch_branch_makes_selected_current(fake_claude: Path) -> None:
     _make_branch_project(fake_claude, 3)
     result = sessions_mod.switch_branch(fake_claude, "-home-user-branchy", "sid-0")

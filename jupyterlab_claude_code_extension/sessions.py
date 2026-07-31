@@ -36,6 +36,11 @@ CURRENT_PIN_FILENAME = ".jl-current"
 # ~0.4s). A sessions poll must never hang on a wedged CLI - on timeout the
 # panel degrades to "no background agents" rather than stalling.
 BG_AGENTS_TIMEOUT_S = 5.0
+# Display surfaces (the context menu's include_bg branches fetch) may serve a
+# roster this old instead of spawning on the click path. Just over the panel's
+# 30s sessions poll, which refreshes the cache - so a menu open between polls
+# is spawn-free and its markers agree with the row chips (same snapshot).
+BG_AGENTS_CACHE_MAX_AGE_S = 35.0
 
 
 def claude_dir() -> Path:
@@ -99,6 +104,39 @@ def bg_agents() -> dict[str, str]:
         ):
             owned[session_id] = short
     return owned
+
+
+# Last ``bg_agents()`` snapshot: (monotonic stamp, roster). The sessions poll
+# refreshes it every 30s; the branches listing reads it so a context-menu
+# open never pays the CLI spawn on the click path (see ``bg_agents_cached``).
+_bg_agents_cache: tuple[float, dict[str, str]] | None = None
+
+
+def _bg_agents_refresh() -> dict[str, str]:
+    """Spawn ``bg_agents()`` and stamp the snapshot."""
+    global _bg_agents_cache
+    result = bg_agents()
+    _bg_agents_cache = (time.monotonic(), result)
+    return result
+
+
+def bg_agents_cached() -> dict[str, str]:
+    """``bg_agents()``, served from the last snapshot when young enough.
+
+    A context menu must open in the sub-100ms band, but resolving branch
+    markers spawns ``claude agents --json`` (~0.4s, 5s ceiling on a wedged
+    CLI). The sessions poll refreshes the snapshot every 30s anyway, so a
+    menu open between polls is served spawn-free AND its markers agree with
+    the row chips - same snapshot. A stale or absent snapshot (poll stopped,
+    server fresh) falls through to a real spawn.
+    """
+    snapshot = _bg_agents_cache
+    if (
+        snapshot is not None
+        and time.monotonic() - snapshot[0] <= BG_AGENTS_CACHE_MAX_AGE_S
+    ):
+        return snapshot[1]
+    return _bg_agents_refresh()
 
 
 def _load_json(path: Path) -> Any:
@@ -690,8 +728,10 @@ def list_sessions(claude_root: Path | None = None) -> list[dict]:
     favourites = set(load_favourites(root))
     states = session_state_by_cwd(root)
     # One lookup per poll, shared by every row: a conversation held by a live
-    # background agent cannot be resumed, only attached to (DEF-13).
-    bg_owned = bg_agents()
+    # background agent cannot be resumed, only attached to (DEF-13). Always a
+    # real spawn - this 30s poll IS what keeps the snapshot fresh for the
+    # cache-served branches path (bg_agents_cached).
+    bg_owned = _bg_agents_refresh()
 
     rows: list[dict] = []
     for project_dir in sorted(projects_dir.iterdir()):
@@ -884,19 +924,23 @@ def _safe_project_dir(claude_root: Path, encoded_path: str) -> Path | None:
     return project_dir
 
 
-def list_branches(claude_root: Path, encoded_path: str) -> dict | None:
+def list_branches(
+    claude_root: Path, encoded_path: str, include_bg: bool = False
+) -> dict | None:
     """List a project's other conversation JSONLs ("branches").
 
     Returns ``{"current": <main sid>, "total": <jsonl count>, "branches":
-    [{"session_id", "file_mtime", "label"}, ...]}`` - the current main
-    session excluded, newest first, ALL of them (the frontend shows the 5
-    most recent in the submenu and the full list in the "More..." popup).
+    [{"session_id", "file_mtime", "label", "bg_id"}, ...]}`` - the current
+    main session excluded, newest first, ALL of them (the frontend shows the
+    5 most recent in the submenu and the full list in the "More..." popup).
 
-    Deliberately does NOT ask which branches a background agent owns: that
-    lookup costs a ``claude agents --json`` spawn (~0.375s, i.e. all of this
-    call), the fork watcher polls this every 2s for up to 3 minutes, and it
-    would only feed a marker. Opening any branch is correct without it - the
-    launch endpoint resolves the verb per conversation id (DEF-13).
+    ``bg_id`` (short id of the live background agent owning that branch, or
+    None) is populated only when ``include_bg`` is set, and then from the
+    poll-refreshed snapshot (``bg_agents_cached``) so the context-menu open
+    stays spawn-free; the fork watcher polls this every 2s for up to 3
+    minutes and never asks for it at all. It feeds a marker only - opening
+    any branch is correct without it, the launch endpoint resolves the verb
+    per conversation id (DEF-13).
     The label prefers the branch's own ``custom-title`` record, then the
     ``sessions-index.json`` summary, then the first 8 chars of the session
     id. Returns None on invalid path or when no main session resolves.
@@ -921,6 +965,9 @@ def list_branches(claude_root: Path, encoded_path: str) -> dict | None:
 
     jsonls = [p for p in project_dir.glob("*.jsonl") if p.stem != current]
     jsonls.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    # Cache-served: the context-menu open must not pay a CLI spawn on the
+    # click path, and the panel's 30s poll keeps the snapshot fresh.
+    bg_owned = bg_agents_cached() if include_bg else {}
     branches = []
     for jsonl in jsonls:
         sid = jsonl.stem
@@ -933,6 +980,7 @@ def list_branches(claude_root: Path, encoded_path: str) -> dict | None:
             "session_id": sid,
             "file_mtime": int(jsonl.stat().st_mtime * 1000),
             "label": label,
+            "bg_id": bg_owned.get(sid),
         })
     return {
         "current": current,

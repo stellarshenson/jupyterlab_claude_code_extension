@@ -5,3 +5,4 @@ node_modules
 !/package.json
 jupyterlab_claude_code_extension
 .claude
+tmp

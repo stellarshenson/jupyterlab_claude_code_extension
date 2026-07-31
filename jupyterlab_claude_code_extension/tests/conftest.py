@@ -17,5 +17,9 @@ def no_bg_agents(monkeypatch: pytest.MonkeyPatch) -> None:
     absent. Tests that care about the background-agent path override this by
     patching ``sessions_mod.bg_agents`` themselves, and the tests of
     ``bg_agents`` itself hold the original object via an import.
+
+    The roster snapshot (``_bg_agents_cache``) is cleared so no test reads a
+    stamp another test's ``list_sessions`` refresh left behind.
     """
     monkeypatch.setattr(sessions_mod, "bg_agents", lambda *a, **k: {})
+    monkeypatch.setattr(sessions_mod, "_bg_agents_cache", None)

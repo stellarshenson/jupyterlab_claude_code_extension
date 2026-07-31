@@ -192,11 +192,15 @@ describe('launch spinner dismiss contract', () => {
       ) ?? [''])[0];
       expect(display).toMatch(/session_id\.slice\(0, 8\)/);
       expect(display).toMatch(/`\$\{b\.label\} \(\$\{shortId\}\)`/);
+      // Menu items compose display name + relative time through the one
+      // label helper (which also appends the bg marker).
       expect(widgetSrc).toMatch(
-        /label: `\$\{this\._branchDisplayName\(b\)\} - \$\{this\._formatRelativeTime\(b\.file_mtime\)\}`/
+        /return `\$\{this\._branchDisplayName\(b\)\} - \$\{time\}\$\{b\.bg_id \? ' \(bg\)' : ''\}`/
       );
+      // The display name lands in the label's TEXT span (the marker after
+      // it is a flex sibling that survives ellipsis truncation).
       expect(widgetSrc).toMatch(
-        /label\.textContent = this\._branchDisplayName\(b\)/
+        /labelText\.textContent = this\._branchDisplayName\(b\)/
       );
     });
 
@@ -452,6 +456,26 @@ describe('launch spinner dismiss contract', () => {
       // The body scroller keeps its place across re-renders.
       expect(widgetSrc).toMatch(/const bodyScroll = this\._bodyEl\.scrollTop/);
       expect(widgetSrc).toMatch(/this\._bodyEl\.scrollTop = bodyScroll/);
+    });
+
+    it('inline name badges set their own line-height so a row never overflows by 1px (DEF-12)', () => {
+      const css: string = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'style', 'base.css'),
+        'utf-8'
+      );
+      // An inline-flex badge whose text inherits the row's 24px line-height
+      // becomes 24px tall; vertical-align: middle then grows the name span's
+      // line box past the fixed 24px row, the list's last row overflows by
+      // 1px, and classic-scrollbar platforms paint a full arrow-button
+      // scrollbar on a list that visually fits.
+      const branchBadge = (css.match(
+        /\.jp-ClaudeSessionsPanel-branchBadge \{[\s\S]*?\}/
+      ) ?? [''])[0];
+      expect(branchBadge).toMatch(/line-height: 1\.3/);
+      const bgBadge = (css.match(
+        /\.jp-ClaudeSessionsPanel-bgBadge \{[\s\S]*?\}/
+      ) ?? [''])[0];
+      expect(bgBadge).toMatch(/line-height: 1\.3/);
     });
 
     it('now label shares the recently-active emphasis colour', () => {
@@ -787,9 +811,10 @@ describe('launch spinner dismiss contract', () => {
       ) ?? [''])[0];
       expect(popup).toMatch(/jp-ClaudeSessionsPanel-branchOpen/);
       expect(popup).toMatch(/void this\._openBranch\(sessionId\)/);
-      // Open appears on both the current row and each branch row.
-      expect(popup).toMatch(/openButton\(current\)/);
-      expect(popup).toMatch(/openButton\(b\.session_id\)/);
+      // Open appears on both the current row and each branch row, each
+      // passing its own bg id so the button's tooltip names the real verb.
+      expect(popup).toMatch(/openButton\(\s*current,/);
+      expect(popup).toMatch(/openButton\(b\.session_id, b\.bg_id\)/);
     });
 
     it('a new branch is watched for and surfaces fast, not on the slow poll', () => {
@@ -846,9 +871,95 @@ describe('background agent attach contract (DEF-13)', () => {
     'utf-8'
   );
 
-  it('types bg_id on rows', () => {
-    // Rows carry it; branches deliberately do not - see list_branches.
+  it('types bg_id on rows and branches', () => {
+    // Rows always carry it; branches carry it too, populated only when the
+    // fetch asked with include_bg=1 (the fork watcher polls without it).
     expect(typesSrc).toMatch(/bg_id: string \| null;/);
+    const branch = (typesSrc.match(/export interface IBranch \{[\s\S]*?\}/) ?? [
+      ''
+    ])[0];
+    expect(branch).toMatch(/bg_id: string \| null;/);
+  });
+
+  it('marks branches as fork or bg on all three surfaces (switch, open, manage)', () => {
+    // The icon column carries each submenu's INTENT, never the row's state:
+    // both submenus list the same conversations with the same labels, so an
+    // icon resolved from bg_id renders a bg row identically in each and a
+    // pointer slip switches the current conversation instead of opening a
+    // terminal. bg is marked in the LABEL, which is also what AT reads.
+    const switchCmd = (widgetSrc.match(
+      /'claude-code-sessions:switch-branch',[\s\S]*?\n    \}\);/
+    ) ?? [''])[0];
+    expect(switchCmd).toMatch(/icon: branchIcon/);
+    expect(switchCmd).not.toMatch(/args\.bg_id/);
+    const openCmd = (widgetSrc.match(
+      /'claude-code-sessions:open-branch',[\s\S]*?\n    \}\);/
+    ) ?? [''])[0];
+    expect(openCmd).toMatch(/icon: terminalIcon/);
+    expect(openCmd).not.toMatch(/args\.bg_id/);
+    // Both submenus build their label through the one helper that appends
+    // the marker, so they cannot drift apart.
+    const menuLabel = (widgetSrc.match(
+      /private _branchMenuLabel[\s\S]*?\n  \}/
+    ) ?? [''])[0];
+    expect(menuLabel).toMatch(/b\.bg_id \? ' \(bg\)' : ''/);
+    const menuBuild = (widgetSrc.match(
+      /private async _openContextMenu[\s\S]*?\n  \}/
+    ) ?? [''])[0];
+    expect(menuBuild.match(/label: this\._branchMenuLabel\(b\)/g)?.length).toBe(
+      2
+    );
+    // The user-facing fetches ask for the marker; the fork watcher must not
+    // (its 2s poll may never pay the claude agents spawn).
+    expect(menuBuild).toMatch(/include_bg=1/);
+    const watcher = (widgetSrc.match(
+      /private _watchForBranch[\s\S]*?\n  \}/
+    ) ?? [''])[0];
+    expect(watcher).not.toMatch(/include_bg/);
+    // Manage popup: rows get the bg chip or the fork icon inside the label.
+    const popup = (widgetSrc.match(
+      /private _showBranchPopup[\s\S]*?\n  \}\n/
+    ) ?? [''])[0];
+    expect(popup).toMatch(/if \(b\.bg_id\)/);
+    expect(popup).toMatch(/jp-ClaudeSessionsPanel-bgBadge/);
+    expect(popup).toMatch(/branchIcon\.element/);
+    // The pinned current row shows the chip when the active session is
+    // bg-owned - gated on the ids matching, because `current` is from the
+    // live branches fetch while `bg_id` is from the last 30s poll, so an
+    // ungated chip can describe a different conversation than the row
+    // prints. Both bg rows extend the row title rather than replacing it.
+    // Resolved once into `currentBg` and used for both the chip and the
+    // Open button's tooltip, so the two can never disagree.
+    expect(popup).toMatch(
+      /const currentBg =\s*this\._activeSession\?\.session_id === current/
+    );
+    expect(popup).toMatch(/if \(currentBg\)/);
+    expect(popup.match(/row\.title \+=|currentRow\.title \+=/g)?.length).toBe(
+      2
+    );
+    // A child title shadows the row's, so the per-row Open button must not
+    // assert "open in its own terminal" on a row where it will attach.
+    expect(popup).toMatch(/Attach to background agent \$\{bgId\}/);
+    // The marker must survive label truncation: the TEXT ellipsises in its
+    // own span (branch rows and the pinned current row), the marker is a
+    // flex-none sibling - a marker inside the ellipsised span is clipped on
+    // exactly the long-titled rows it matters for.
+    expect(popup.match(/jp-ClaudeSessionsPanel-branchLabelText/g)?.length).toBe(
+      2
+    );
+    const css: string = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'style', 'base.css'),
+      'utf-8'
+    );
+    const labelRule = (css.match(
+      /\.jp-ClaudeSessionsPanel-branchLabel \{[\s\S]*?\}/
+    ) ?? [''])[0];
+    expect(labelRule).toMatch(/display: flex/);
+    expect(labelRule).not.toMatch(/text-overflow/);
+    const labelText = (css.match(
+      /\.jp-ClaudeSessionsPanel-branchLabelText \{[\s\S]*?\}/
+    ) ?? [''])[0];
+    expect(labelText).toMatch(/text-overflow: ellipsis/);
   });
 
   it('names the conversation and leaves the verb to the server', () => {

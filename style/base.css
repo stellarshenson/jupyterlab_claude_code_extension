@@ -328,7 +328,15 @@
 }
 
 /* Branch icon + conversation count, hugging the name text inside the
-   ellipsised name span (not flexed to the row edge). */
+   ellipsised name span (not flexed to the row edge). Also the Manage
+   Sessions popup's bare fork marker, where it is a flex child instead -
+   see the `.branchLabel >` override further down.
+   line-height must be own, not the row's 24px: an inline-flex box whose text
+   item inherits 24px becomes 24px tall, and vertical-align: middle then grows
+   the name span's line box past the fixed 24px row - the last row of a list
+   overflows it by 1px and classic-scrollbar platforms paint a full
+   arrow-button scrollbar on a list that visually fits (DEF-12 re-report).
+   Same value as the bg badge below. */
 .jp-ClaudeSessionsPanel-branchBadge {
   display: inline-flex;
   align-items: center;
@@ -336,6 +344,7 @@
   margin-left: 6px;
   color: var(--jp-ui-font-color2);
   font-size: var(--jp-ui-font-size0);
+  line-height: 1.3;
   vertical-align: middle;
 }
 
@@ -628,13 +637,29 @@
   background: var(--ccs-surface-hover);
 }
 
+/* Flex line: the TEXT span ellipsises, the fork/bg marker after it is a
+   flex: none sibling that survives truncation - a marker inside the
+   ellipsised span would be clipped on exactly the long-titled rows it
+   matters for. */
 .jp-ClaudeSessionsPanel-branchLabel {
   flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  color: var(--ccs-text);
+}
+
+.jp-ClaudeSessionsPanel-branchLabelText {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ccs-text);
+}
+
+.jp-ClaudeSessionsPanel-branchLabel > .jp-ClaudeSessionsPanel-bgBadge,
+.jp-ClaudeSessionsPanel-branchLabel > .jp-ClaudeSessionsPanel-branchBadge {
+  flex: 0 0 auto;
 }
 
 /* Copy id - design-language action icon: wireframe by default, hovers to a

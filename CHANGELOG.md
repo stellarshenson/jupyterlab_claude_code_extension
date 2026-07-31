@@ -4,6 +4,16 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.71] - 2026-07-31
+
+### Added
+
+- Every conversation is now marked for what it is wherever one can be picked - the "Switch and Manage Sessions" submenu, the "Open Branched Conversation" submenu, and the Manage Sessions popup. The popup carries a branch icon on an ordinary fork and a `bg` chip on a conversation held by a running background agent, naming the agent in the row's tooltip; both submenus append a `(bg)` suffix to the same conversations while keeping their icon column for what the submenu itself does, so the two adjacent submenus never read as identical lists. The marker costs nothing when the menu opens - it is read from the agent roster the panel already refreshes on its normal poll, so a right-click stays instant
+
+### Fixed
+
+- A section holding only a row or two no longer draws a scrollbar it cannot use. The 1.2.59 layout redesign removed one cause of this; a second, unrelated one remained - the small branch icon and conversation count shown after a project name took the row's own line height, which made it exactly as tall as the row and pushed the name a fraction of a pixel past the row height. One pixel of overflow is enough for Windows and other systems with classic scrollbars to paint a full arrow-button scrollbar on a list that visibly fits, which is why it showed most clearly on a list filtered down to a single row. The marker is now sized to its own text, and lists report no overflow at any window height, filtered or not (DEF-12)
+
 ## [1.2.64] - 2026-07-27
 
 ### Fixed

@@ -64,6 +64,10 @@ export interface IBranch {
   session_id: string;
   file_mtime: number;
   label: string;
+  /** Short id of the live background agent owning this branch, or null.
+   * Populated only when the fetch asked with include_bg=1 - display-only,
+   * like ISession.bg_id the server resolves the launch verb itself. */
+  bg_id: string | null;
 }
 
 export interface IBranchesResponse {

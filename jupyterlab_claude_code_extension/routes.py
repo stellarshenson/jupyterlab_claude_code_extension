@@ -462,23 +462,27 @@ class SessionBranchesHandler(APIHandler):
 
     ``GET sessions/branches?encoded_path=-home-lab-foo`` returns
     ``{"current", "total", "branches": [{"session_id", "file_mtime",
-    "label"}]}`` - newest first, current main excluded. The frontend
-    shows the 5 most recent in the submenu and the rest via "More...".
+    "label", "bg_id"}]}`` - newest first, current main excluded. The
+    frontend shows the 5 most recent in the submenu and the rest via
+    "More...". ``bg_id`` is populated only with ``include_bg=1`` (the
+    user-facing fetches); the fork watcher polls without it so its 2s
+    cadence never pays the ``claude agents --json`` spawn.
 
     Off the IOLoop on its own merits: the listing opens and stats every branch
     JSONL to read its title, unbounded by conversation count, and the fork
-    watcher polls this endpoint every 2s for up to 3 minutes. It makes no
-    subprocess call - that is the sessions listing's reason, not this one.
+    watcher polls this endpoint every 2s for up to 3 minutes.
     """
 
     @tornado.web.authenticated
     async def get(self) -> None:
         encoded_path = self.get_query_argument("encoded_path", default="")
+        include_bg = self.get_query_argument("include_bg", default="") == "1"
         result = await asyncio.get_running_loop().run_in_executor(
             None,
             sessions_mod.list_branches,
             sessions_mod.claude_dir(),
             encoded_path,
+            include_bg,
         )
         if result is None:
             self.set_status(400)
