@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.72] - 2026-08-01
+
+### Fixed
+
+- The `bg` chip is now shown only for a conversation a background agent is really running, and clicking such a row can no longer bring a finished agent back to life. Claude's own agent listing keeps a background job on the list after its worker has exited - a job waiting on you is still "listed" - and the panel was reading that list as "an agent holds this conversation". Rows were therefore chipped for agents that had long since stopped, and because a chipped row opens by attaching rather than resuming, clicking one restarted the old agent with the model, effort and permission mode it was originally launched with instead of simply resuming the conversation. On one machine three rows were chipped where only one agent was actually running. The panel now checks that the agent's worker process still exists, which is the same condition Claude itself uses to refuse a resume, so the panel and the CLI can no longer disagree (DEF-14)
+
 ## [1.2.71] - 2026-07-31
 
 ### Added

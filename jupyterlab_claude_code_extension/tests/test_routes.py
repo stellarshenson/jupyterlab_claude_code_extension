@@ -1744,7 +1744,10 @@ def test_bg_agents_maps_background_conversations_to_short_ids(
             "kind": "background",
             "id": "d47d74e9",
             "sessionId": "d47d74e9-d323-4bbf-9b57-76eb171a6f45",
-            "state": "done",
+            # Own pid: a listed job counts only while a worker really runs.
+            "pid": os.getpid(),
+            "state": "working",
+            "status": "idle",
         },
     ]))
     assert real_bg_agents() == {
@@ -1752,13 +1755,53 @@ def test_bg_agents_maps_background_conversations_to_short_ids(
     }
 
 
+def test_bg_agents_ignores_listed_jobs_without_a_live_worker(
+    monkeypatch, claude_on_path
+) -> None:
+    # DEF-14: ``claude agents --json`` is derived from the on-disk job records,
+    # not from the daemon, so it keeps listing a job whose worker has exited -
+    # blocked-on-the-user jobs simply lose the ``pid`` field. Marking those cost
+    # the user a ``claude attach`` that RESURRECTED a dead agent on a
+    # conversation that resumes perfectly well.
+    monkeypatch.setattr(sessions_mod.subprocess, "run", _agents_json([
+        {
+            "kind": "background",
+            "id": "48eab74a",
+            "sessionId": "48eab74a-34e0-40b5-9c9f-6bf6374d915b",
+            "state": "blocked",
+        },
+    ]))
+    assert real_bg_agents() == {}
+
+
+def test_bg_agents_checks_the_pid_rather_than_trusting_it(
+    monkeypatch, claude_on_path
+) -> None:
+    # The same listing hands back long-dead pids for interactive entries, so a
+    # stale worker pid must not be taken at face value either.
+    monkeypatch.setattr(sessions_mod, "_pid_alive", lambda pid: False)
+    monkeypatch.setattr(sessions_mod.subprocess, "run", _agents_json([
+        {
+            "kind": "background",
+            "id": "48eab74a",
+            "sessionId": "48eab74a-34e0-40b5-9c9f-6bf6374d915b",
+            "pid": 999_999,
+            "state": "working",
+        },
+    ]))
+    assert real_bg_agents() == {}
+
+
 def test_bg_agents_skips_entries_missing_either_id(
     monkeypatch, claude_on_path
 ) -> None:
+    # Every entry carries a live pid, so the liveness gate cannot be what
+    # rejects them - the missing/blank ids are.
+    live = os.getpid()
     monkeypatch.setattr(sessions_mod.subprocess, "run", _agents_json([
-        {"kind": "background", "sessionId": "no-short-id"},
-        {"kind": "background", "id": "no-session-id"},
-        {"kind": "background", "id": "", "sessionId": ""},
+        {"kind": "background", "pid": live, "sessionId": "no-short-id"},
+        {"kind": "background", "pid": live, "id": "no-session-id"},
+        {"kind": "background", "pid": live, "id": "", "sessionId": ""},
         "not-a-dict",
     ]))
     assert real_bg_agents() == {}

@@ -54,19 +54,27 @@ def claude_binary_available() -> str | None:
 
 
 def bg_agents() -> dict[str, str]:
-    """Map conversation id -> short agent id for every live background agent.
+    """Map conversation id -> short agent id for every LIVE background agent.
 
-    A background agent owns its conversation for as long as its worker lives:
-    ``claude --resume <id>`` on such a conversation is refused ("currently
-    running as a background agent"), so a row whose conversation is listed here
-    must be opened with ``claude attach <short>`` instead (DEF-13). The short
-    id is exactly what ``attach`` takes.
+    A background agent owns its conversation only while its worker process
+    lives: that is exactly when ``claude --resume <id>`` is refused ("currently
+    running as a background agent"), and such a row must be opened with
+    ``claude attach <short>`` instead (DEF-13). The short id is what ``attach``
+    takes.
 
-    ``claude agents --json`` is claude's own scripting surface and the same
-    authority that refuses the resume, so this can never disagree with the CLI
-    the way a read of the daemon's internal roster could. Returns ``{}`` when
-    claude is missing or the call fails, times out, or returns garbage - the
-    panel then behaves exactly as before rather than mislabelling rows.
+    ``claude agents --json`` is claude's own scripting surface, but it is NOT a
+    live-worker roster - it is derived from the on-disk job records under
+    ``~/.claude/jobs/``, so it keeps listing a job whose worker is long gone
+    (``state: "blocked"``, i.e. waiting on the user rather than running).
+    Membership alone
+    therefore does not mean a resume would be refused: measured on a live
+    machine, two of the three listed background jobs resumed with no refusal at
+    all, and clicking such a row ran ``claude attach``, which RESURRECTS the
+    worker under the job's stored respawn flags (DEF-14). Liveness is the real
+    predicate, so an entry counts only when it reports a worker ``pid`` that
+    still exists. Returns ``{}`` when claude is missing or the call fails,
+    times out, or returns garbage - the panel then degrades to "no background
+    agents", which is the safe direction: a plain ``--resume``.
     """
     binary = claude_binary_available()
     if not binary:
@@ -93,6 +101,17 @@ def bg_agents() -> dict[str, str]:
         # Interactive sessions are listed too; only a background worker holds
         # its conversation against a resume.
         if not isinstance(entry, dict) or entry.get("kind") != "background":
+            continue
+        # ...and only while that worker is actually running. The listing joins
+        # each job record against claude's live-session store and publishes
+        # ``pid`` only for a worker it has verified alive AND start-time-matched
+        # (so a recycled pid cannot pass); a job whose worker exited keeps its
+        # entry but drops the field. That verified set is the same one claude's
+        # own resume refusal consults, which is what makes the field - not
+        # ``kind`` - the honest predicate. ``_pid_alive`` re-checks it only to
+        # close the gap between claude's check and ours (DEF-14).
+        pid = entry.get("pid")
+        if not isinstance(pid, int) or not _pid_alive(pid):
             continue
         session_id = entry.get("sessionId")
         short = entry.get("id")
