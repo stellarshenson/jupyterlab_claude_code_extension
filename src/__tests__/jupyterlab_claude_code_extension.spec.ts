@@ -693,6 +693,79 @@ describe('launch spinner dismiss contract', () => {
       expect(claudeTabColourId('chartreuse')).toBeNull();
       expect(claudeTabColourId(null)).toBeNull();
     });
+
+    /*
+     * DEF-15: the only RECURRING trigger for tinting used to be `_fetch` (the
+     * settings toggle called it once on change), and every `_fetch` call site
+     * is panel-driven - `refresh()`, the sessions poll, the post-launch and
+     * post-delete refetches. The poll behind them is started in
+     * `onAfterShow` and stopped in `onBeforeHide`/`onCloseRequest`. So with the
+     * panel hidden or closed, no colour pass ever ran and a terminal running
+     * Claude stayed untinted. The colour pass now has its own timer that the
+     * visibility hooks do not touch.
+     */
+    it('arms the colour pass from the constructor, not from onAfterShow', () => {
+      const ctor = (widgetSrc.match(
+        /constructor\(\s*app: JupyterFrontEnd[\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(ctor).toMatch(/_scheduleColourPass\(\)/);
+    });
+
+    it('never stops the colour pass on hide or close (only the row poll)', () => {
+      const hide = (widgetSrc.match(/onBeforeHide\([\s\S]*?\n  \}/) ?? [''])[0];
+      const close = (widgetSrc.match(/onCloseRequest\([\s\S]*?\n  \}/) ?? [
+        ''
+      ])[0];
+      expect(hide).toMatch(/_stopPolling\(\)/);
+      expect(hide).not.toMatch(/_colourHandle|_scheduleColourPass/);
+      expect(close).not.toMatch(/_colourHandle|_scheduleColourPass/);
+    });
+
+    it('rearms after every pass, including a failed one', () => {
+      const reconcile = (widgetSrc.match(
+        /private async _reconcileTerminalColours\([\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      // finally, so one thrown probe cannot end tinting for the session
+      expect(reconcile).toMatch(/finally \{[\s\S]*?_scheduleColourPass\(\)/);
+      // and the disabled path deliberately does NOT rearm - setColouredTabs
+      // restarts the loop instead
+      expect(reconcile).toMatch(
+        /if \(!this\._colouredTabs\) \{[\s\S]*?return;/
+      );
+    });
+
+    it('anchors the next pass on the last one, collapsing the two cadences while visible', () => {
+      const schedule = (widgetSrc.match(
+        /private _scheduleColourPass\([\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(schedule).toMatch(/clearTimeout\(this\._colourHandle\)/);
+      expect(schedule).toMatch(/setTimeout\([\s\S]*?POLL_INTERVAL_MS/);
+      // The fetch path still tints immediately after a launch, and reschedules
+      // through the same anchor rather than adding a second cadence. Scoped to
+      // _fetch: an unanchored search over the whole file matched the first
+      // `_render();` anywhere and stayed green with this call deleted.
+      const fetchFn = (widgetSrc.match(
+        /private async _fetch\([\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(fetchFn).toMatch(/_reconcileTerminalColours\(\)\.catch/);
+    });
+
+    it('does not rearm the pass on a disposed widget', () => {
+      // dispose() can land between a pass's await and its `finally`; without
+      // this guard the rearm outlives the widget and probes forever.
+      const schedule = (widgetSrc.match(
+        /private _scheduleColourPass\([\s\S]*?\n  \}/
+      ) ?? [''])[0];
+      expect(schedule).toMatch(/if \(this\.isDisposed\) \{\s*return;/);
+    });
+
+    it('clears the colour timer on dispose', () => {
+      const dispose = (widgetSrc.match(/\n  dispose\(\)[\s\S]*?\n  \}/) ?? [
+        ''
+      ])[0];
+      expect(dispose).toMatch(/clearTimeout\(this\._colourHandle\)/);
+      expect(dispose).toMatch(/super\.dispose\(\)/);
+    });
   });
 
   describe('conversation-aware reuse + open-branch contract', () => {

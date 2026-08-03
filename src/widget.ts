@@ -160,6 +160,19 @@ export class ClaudeCodeSessionsWidget extends Widget {
 
     this._buildShell();
     this._setupContextMenu();
+    // Tinting runs from startup, not from the first time the panel is shown -
+    // the widget is constructed at activation whether or not the user ever
+    // opens the panel (DEF-15).
+    this._scheduleColourPass();
+  }
+
+  dispose(): void {
+    this._stopPolling();
+    if (this._colourHandle !== null) {
+      window.clearTimeout(this._colourHandle);
+      this._colourHandle = null;
+    }
+    super.dispose();
   }
 
   refresh(): void {
@@ -861,16 +874,59 @@ export class ClaudeCodeSessionsWidget extends Widget {
    * Claude conversation on every pass via the ``terminal-cwd`` probe - so a tab
    * whose terminal has since started (or switched) a Claude conversation is
    * re-tinted correctly rather than pinned to a stale identity. The probe is a
-   * few /proc reads per terminal; runs after each fetch (launch refresh + the
-   * 30s poll), which is already gated to skip while a context menu is open. */
+   * few /proc reads per terminal. Driven by its own timer (see
+   * ``_scheduleColourPass``), and additionally by a sessions fetch and by the
+   * settings toggle - the timer path is NOT gated on the context menu the way
+   * the row poll is, since re-tinting a dock tab neither reshuffles rows nor
+   * dismisses a menu. */
   private async _reconcileTerminalColours(): Promise<void> {
     if (!this._colouredTabs) {
+      // No reschedule: the loop is restarted by setColouredTabs(true), which
+      // calls straight back in here.
       return;
     }
-    const sessions = this._sessions ?? [];
-    await this._eachClaudeTerminal((widget, info) => {
-      this._applyTerminalColour(widget, colourForTerminal(info, sessions));
-    });
+    try {
+      const sessions = this._sessions ?? [];
+      await this._eachClaudeTerminal((widget, info) => {
+        this._applyTerminalColour(widget, colourForTerminal(info, sessions));
+      });
+    } finally {
+      // Always rearm, even if a pass threw - one failed probe must not end
+      // tinting for the rest of the session.
+      this._scheduleColourPass();
+    }
+  }
+
+  /** Arm the next colour pass, 30s after the last one WHEREVER it came from -
+   * this timer, a sessions fetch, or the settings toggle. Anchoring on the last
+   * pass rather than running an independent interval collapses the two into one
+   * cadence while the panel is visible. Not a guarantee: the timer sits at
+   * completion + 30s while the poll is on a fixed 30s grid, so a cycle slower
+   * than its predecessor can fire the timer before that cycle's own reconcile
+   * clears it. Bounded at two passes, self-correcting, and colours are
+   * idempotent - cost, never corruption.
+   *
+   * This is what makes tinting independent of the panel (DEF-15): the sessions
+   * poll stops on hide/close because rows only matter while they are on screen,
+   * but a terminal running Claude is coloured whether or not the panel is in
+   * view. The first pass is armed in the constructor, so it runs from startup
+   * even if the panel is never opened - in that state `_sessions` is empty,
+   * which only costs the cwd fallback in `colourForTerminal`; a terminal whose
+   * own conversation is readable (the normal case since DEF-11) still tints. */
+  private _scheduleColourPass(): void {
+    // dispose() can land between a pass's await and its `finally`, and the
+    // rearm would then outlive the widget - probing terminals and setting tab
+    // colours forever off a dead object. Same guard `_watchForBranch` uses.
+    if (this.isDisposed) {
+      return;
+    }
+    if (this._colourHandle !== null) {
+      window.clearTimeout(this._colourHandle);
+    }
+    this._colourHandle = window.setTimeout(() => {
+      this._colourHandle = null;
+      this._reconcileTerminalColours().catch(() => undefined);
+    }, POLL_INTERVAL_MS);
   }
 
   /** Drop the tint from every Claude terminal - the coloured-tabs setting went
@@ -2490,6 +2546,8 @@ export class ClaudeCodeSessionsWidget extends Widget {
   private _activeSession: ISession | null = null;
   private _activeRowEl: HTMLElement | null = null;
   private _pollHandle: number | null = null;
+  // Colour pass timer - deliberately NOT stopped on hide/close (DEF-15).
+  private _colourHandle: number | null = null;
   private readonly _removingPaths: Set<string> = new Set();
   private readonly _terminalTracker: ITerminalTracker | null;
   private readonly _fileBrowser: IDefaultFileBrowser | null;
