@@ -4,6 +4,12 @@
 
 <!-- <END NEW CHANGELOG ENTRY> -->
 
+## [1.2.73] - 2026-08-03
+
+### Fixed
+
+- Claude terminal tabs now keep their colour whether or not the sessions panel is on screen. Tinting used to be driven by the panel's own refresh, which only runs while the panel is the selected sidebar tab, so collapsing the sidebar - or simply switching to the file browser - stopped new terminals from ever being tinted and left them plain until the panel was opened again. The colour pass now runs on its own timer from the moment JupyterLab starts, independently of the panel, and a single failed pass no longer ends tinting for the rest of the session. Row refreshes stay tied to the panel being visible, since rows only matter when they can be seen (DEF-15)
+
 ## [1.2.72] - 2026-08-01
 
 ### Fixed
